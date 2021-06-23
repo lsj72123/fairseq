@@ -21,86 +21,7 @@ import torch
 
 from .meters import AverageMeter, StopwatchMeter, TimeMeter
 
-
 logger = logging.getLogger(__name__)
-
-
-def progress_bar(
-    iterator,
-    log_format: Optional[str] = None,
-    log_interval: int = 100,
-    log_file: Optional[str] = None,
-    epoch: Optional[int] = None,
-    prefix: Optional[str] = None,
-    tensorboard_logdir: Optional[str] = None,
-    default_log_format: str = "tqdm",
-    wandb_project: Optional[str] = None,
-    wandb_run_name: Optional[str] = None,
-    azureml_logging: Optional[bool] = False,
-):
-    if log_format is None:
-        log_format = default_log_format
-    if log_file is not None:
-        handler = logging.FileHandler(filename=log_file)
-        logger.addHandler(handler)
-
-    if log_format == "tqdm" and not sys.stderr.isatty():
-        log_format = "simple"
-
-    if log_format == "json":
-        bar = JsonProgressBar(iterator, epoch, prefix, log_interval)
-    elif log_format == "none":
-        bar = NoopProgressBar(iterator, epoch, prefix)
-    elif log_format == "simple":
-        bar = SimpleProgressBar(iterator, epoch, prefix, log_interval)
-    elif log_format == "tqdm":
-        bar = TqdmProgressBar(iterator, epoch, prefix)
-    else:
-        raise ValueError("Unknown log format: {}".format(log_format))
-
-    if tensorboard_logdir:
-        try:
-            # [FB only] custom wrapper for TensorBoard
-            import palaas  # noqa
-            from .fb_tbmf_wrapper import FbTbmfWrapper
-
-            bar = FbTbmfWrapper(bar, log_interval)
-        except ImportError:
-            bar = TensorboardProgressBarWrapper(bar, tensorboard_logdir)
-
-    if wandb_project:
-        bar = WandBProgressBarWrapper(bar, wandb_project, run_name=wandb_run_name)
-
-    if azureml_logging:
-        bar = AzureMLProgressBarWrapper(bar)
-
-    return bar
-
-
-def build_progress_bar(
-    args,
-    iterator,
-    epoch: Optional[int] = None,
-    prefix: Optional[str] = None,
-    default: str = "tqdm",
-    no_progress_bar: str = "none",
-):
-    """Legacy wrapper that takes an argparse.Namespace."""
-    if getattr(args, "no_progress_bar", False):
-        default = no_progress_bar
-    if getattr(args, "distributed_rank", 0) == 0:
-        tensorboard_logdir = getattr(args, "tensorboard_logdir", None)
-    else:
-        tensorboard_logdir = None
-    return progress_bar(
-        iterator,
-        log_format=args.log_format,
-        log_interval=args.log_interval,
-        epoch=epoch,
-        prefix=prefix,
-        tensorboard_logdir=tensorboard_logdir,
-        default_log_format=default,
-    )
 
 
 def format_stat(stat):
@@ -117,6 +38,72 @@ def format_stat(stat):
     return stat
 
 
+@contextmanager
+def rename_logger(logger, new_name):
+    old_name = logger.name
+    if new_name is not None:
+        logger.name = new_name
+    yield logger
+    logger.name = old_name
+
+
+def progress_bar(
+        iterator,
+        log_format: Optional[str] = None,
+        log_interval: int = 100,
+        log_file: Optional[str] = None,
+        epoch: Optional[int] = None,
+        prefix: Optional[str] = None,
+        tensorboard_logdir: Optional[str] = None,
+        default_log_format: str = "tqdm",
+        wandb_project: Optional[str] = None,
+        wandb_run_name: Optional[str] = None,
+        azureml_logging: Optional[bool] = False,
+):
+    if log_format is None:
+        log_format = default_log_format
+
+    if log_file is not None:
+        handler = logging.FileHandler(filename=log_file)
+        logger.addHandler(handler)
+
+    if log_format == "tqdm" and not sys.stderr.isatty():
+        log_format = "simple"
+
+    if log_format == "json":    # todo
+        bar = JsonProgressBar(iterator, epoch, prefix, log_interval)
+
+    elif log_format == "none":  # todo
+        bar = NoopProgressBar(iterator, epoch, prefix)
+
+    elif log_format == "simple":
+        bar = SimpleProgressBar(iterator, epoch, prefix, log_interval)
+
+    elif log_format == "tqdm":  # todo
+        bar = TqdmProgressBar(iterator, epoch, prefix)
+
+    else:
+        raise ValueError("Unknown log format: {}".format(log_format))
+
+    if tensorboard_logdir:  # todo
+        try:
+            # [FB only] custom wrapper for TensorBoard
+            import palaas  # noqa
+            from .fb_tbmf_wrapper import FbTbmfWrapper
+
+            bar = FbTbmfWrapper(bar, log_interval)
+        except ImportError:
+            bar = TensorboardProgressBarWrapper(bar, tensorboard_logdir)
+
+    if wandb_project:   # todo
+        bar = WandBProgressBarWrapper(bar, wandb_project, run_name=wandb_run_name)
+
+    if azureml_logging: # todo
+        bar = AzureMLProgressBarWrapper(bar)
+
+    return bar
+
+
 class BaseProgressBar(object):
     """Abstract class for progress bars."""
 
@@ -127,8 +114,13 @@ class BaseProgressBar(object):
         self.prefix = ""
         if epoch is not None:
             self.prefix += "epoch {:03d}".format(epoch)
+
         if prefix is not None:
             self.prefix += (" | " if self.prefix != "" else "") + prefix
+
+    def update_config(self, config):
+        """Log latest configuration."""
+        pass
 
     def __len__(self):
         return len(self.iterable)
@@ -150,16 +142,6 @@ class BaseProgressBar(object):
         """Print end-of-epoch stats."""
         raise NotImplementedError
 
-    def update_config(self, config):
-        """Log latest configuration."""
-        pass
-
-    def _str_commas(self, stats):
-        return ", ".join(key + "=" + stats[key].strip() for key in stats.keys())
-
-    def _str_pipes(self, stats):
-        return " | ".join(key + " " + stats[key].strip() for key in stats.keys())
-
     def _format_stats(self, stats):
         postfix = OrderedDict(stats)
         # Preprocess stats according to datatype
@@ -167,14 +149,127 @@ class BaseProgressBar(object):
             postfix[key] = str(format_stat(postfix[key]))
         return postfix
 
+    @staticmethod
+    def _str_commas(stats):
+        return ", ".join(key + "=" + stats[key].strip() for key in stats.keys())
 
-@contextmanager
-def rename_logger(logger, new_name):
-    old_name = logger.name
-    if new_name is not None:
-        logger.name = new_name
-    yield logger
-    logger.name = old_name
+    @staticmethod
+    def _str_pipes(stats):
+        return " | ".join(key + " " + stats[key].strip() for key in stats.keys())
+
+
+class SimpleProgressBar(BaseProgressBar):
+    """A minimal logger for non-TTY environments."""
+
+    def __init__(self, iterable, epoch=None, prefix=None, log_interval=1000):
+        super().__init__(iterable, epoch, prefix)
+        self.log_interval = log_interval
+        self.i = None
+        self.size = None
+
+    def __iter__(self):
+        self.size = len(self.iterable)
+        for i, obj in enumerate(self.iterable, start=self.n):
+            self.i = i
+            yield obj
+
+    def log(self, stats, tag=None, step=None):
+        """Log intermediate stats according to log_interval."""
+        step = step or self.i or 0
+        if step > 0 and self.log_interval is not None and step % self.log_interval == 0:
+            stats = self._format_stats(stats)
+            postfix = self._str_commas(stats)
+            with rename_logger(logger, tag):
+                logger.info(
+                    "{}:  {:5d} / {:d} {}".format(
+                        self.prefix, self.i + 1, self.size, postfix
+                    )
+                )
+
+    def print(self, stats, tag=None, step=None):
+        """Print end-of-epoch stats."""
+        postfix = self._str_pipes(self._format_stats(stats))
+        with rename_logger(logger, tag):
+            logger.info("{} | {}".format(self.prefix, postfix))
+
+
+class TqdmProgressBar(BaseProgressBar):
+    """Log to tqdm."""
+
+    def __init__(self, iterable, epoch=None, prefix=None):
+        super().__init__(iterable, epoch, prefix)
+        from tqdm import tqdm
+
+        self.tqdm = tqdm(
+            iterable,
+            self.prefix,
+            leave=False,
+            disable=(logger.getEffectiveLevel() > logging.INFO),
+        )
+
+    def __iter__(self):
+        return iter(self.tqdm)
+
+    def log(self, stats, tag=None, step=None):
+        """Log intermediate stats according to log_interval."""
+        self.tqdm.set_postfix(self._format_stats(stats), refresh=False)
+
+    def print(self, stats, tag=None, step=None):
+        """Print end-of-epoch stats."""
+        postfix = self._str_pipes(self._format_stats(stats))
+        with rename_logger(logger, tag):
+            logger.info("{} | {}".format(self.prefix, postfix))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def build_progress_bar(
+        args,
+        iterator,
+        epoch: Optional[int] = None,
+        prefix: Optional[str] = None,
+        default: str = "tqdm",
+        no_progress_bar: str = "none",
+):
+    """Legacy wrapper that takes an argparse.Namespace."""
+    if getattr(args, "no_progress_bar", False):
+        default = no_progress_bar
+    if getattr(args, "distributed_rank", 0) == 0:
+        tensorboard_logdir = getattr(args, "tensorboard_logdir", None)
+    else:
+        tensorboard_logdir = None
+    return progress_bar(
+        iterator,
+        log_format=args.log_format,
+        log_interval=args.log_interval,
+        epoch=epoch,
+        prefix=prefix,
+        tensorboard_logdir=tensorboard_logdir,
+        default_log_format=default,
+    )
+
+
+
+
+
+
+
+
+
 
 
 class JsonProgressBar(BaseProgressBar):
@@ -247,67 +342,10 @@ class NoopProgressBar(BaseProgressBar):
         pass
 
 
-class SimpleProgressBar(BaseProgressBar):
-    """A minimal logger for non-TTY environments."""
-
-    def __init__(self, iterable, epoch=None, prefix=None, log_interval=1000):
-        super().__init__(iterable, epoch, prefix)
-        self.log_interval = log_interval
-        self.i = None
-        self.size = None
-
-    def __iter__(self):
-        self.size = len(self.iterable)
-        for i, obj in enumerate(self.iterable, start=self.n):
-            self.i = i
-            yield obj
-
-    def log(self, stats, tag=None, step=None):
-        """Log intermediate stats according to log_interval."""
-        step = step or self.i or 0
-        if step > 0 and self.log_interval is not None and step % self.log_interval == 0:
-            stats = self._format_stats(stats)
-            postfix = self._str_commas(stats)
-            with rename_logger(logger, tag):
-                logger.info(
-                    "{}:  {:5d} / {:d} {}".format(
-                        self.prefix, self.i + 1, self.size, postfix
-                    )
-                )
-
-    def print(self, stats, tag=None, step=None):
-        """Print end-of-epoch stats."""
-        postfix = self._str_pipes(self._format_stats(stats))
-        with rename_logger(logger, tag):
-            logger.info("{} | {}".format(self.prefix, postfix))
 
 
-class TqdmProgressBar(BaseProgressBar):
-    """Log to tqdm."""
 
-    def __init__(self, iterable, epoch=None, prefix=None):
-        super().__init__(iterable, epoch, prefix)
-        from tqdm import tqdm
 
-        self.tqdm = tqdm(
-            iterable,
-            self.prefix,
-            leave=False,
-            disable=(logger.getEffectiveLevel() > logging.INFO),
-        )
-
-    def __iter__(self):
-        return iter(self.tqdm)
-
-    def log(self, stats, tag=None, step=None):
-        """Log intermediate stats according to log_interval."""
-        self.tqdm.set_postfix(self._format_stats(stats), refresh=False)
-
-    def print(self, stats, tag=None, step=None):
-        """Print end-of-epoch stats."""
-        postfix = self._str_pipes(self._format_stats(stats))
-        with rename_logger(logger, tag):
-            logger.info("{} | {}".format(self.prefix, postfix))
 
 
 try:

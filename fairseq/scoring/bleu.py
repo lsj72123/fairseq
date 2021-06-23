@@ -30,48 +30,6 @@ class BleuStat(ctypes.Structure):
 
 
 @dataclass
-class SacrebleuConfig(FairseqDataclass):
-    sacrebleu_tokenizer: EvaluationTokenizer.ALL_TOKENIZER_TYPES = field(
-        default="13a", metadata={"help": "tokenizer"}
-    )
-    sacrebleu_lowercase: bool = field(
-        default=False, metadata={"help": "apply lowercasing"}
-    )
-    sacrebleu_char_level: bool = field(
-        default=False, metadata={"help": "evaluate at character level"}
-    )
-
-
-@register_scorer("sacrebleu", dataclass=SacrebleuConfig)
-class SacrebleuScorer(BaseScorer):
-    def __init__(self, cfg):
-        super(SacrebleuScorer, self).__init__(cfg)
-        import sacrebleu
-
-        self.sacrebleu = sacrebleu
-        self.tokenizer = EvaluationTokenizer(
-            tokenizer_type=cfg.sacrebleu_tokenizer,
-            lowercase=cfg.sacrebleu_lowercase,
-            character_tokenization=cfg.sacrebleu_char_level,
-        )
-
-    def add_string(self, ref, pred):
-        self.ref.append(self.tokenizer.tokenize(ref))
-        self.pred.append(self.tokenizer.tokenize(pred))
-
-    def score(self, order=4):
-        return self.result_string(order).score
-
-    def result_string(self, order=4):
-        if order != 4:
-            raise NotImplementedError
-        # tokenization and lowercasing are performed by self.tokenizer instead.
-        return self.sacrebleu.corpus_bleu(
-            self.pred, [self.ref], tokenize="none"
-        ).format()
-
-
-@dataclass
 class BleuConfig(FairseqDataclass):
     pad: int = field(default=1, metadata={"help": "padding index"})
     eos: int = field(default=2, metadata={"help": "eos index"})
@@ -103,6 +61,11 @@ class Scorer(object):
             self.C.bleu_one_init(ctypes.byref(self.stat))
         else:
             self.C.bleu_zero_init(ctypes.byref(self.stat))
+
+
+
+
+
 
     def add(self, ref, pred):
         if not isinstance(ref, torch.IntTensor):
@@ -165,3 +128,74 @@ class Scorer(object):
             self.stat.predlen,
             self.stat.reflen
         )
+
+
+
+
+
+
+
+@dataclass
+class SacrebleuConfig(FairseqDataclass):
+    sacrebleu_tokenizer: EvaluationTokenizer.ALL_TOKENIZER_TYPES = field(
+        default="13a",
+        metadata={"help": "tokenizer"}
+    )
+    sacrebleu_lowercase: bool = field(
+        default=False,
+        metadata={"help": "apply lowercasing"}
+    )
+    sacrebleu_char_level: bool = field(
+        default=False,
+        metadata={"help": "evaluate at character level"}
+    )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+@register_scorer("sacrebleu", dataclass=SacrebleuConfig)
+class SacrebleuScorer(BaseScorer):
+    def __init__(self, cfg):
+        super(SacrebleuScorer, self).__init__(cfg)
+        import sacrebleu
+
+        self.sacrebleu = sacrebleu
+        self.tokenizer = EvaluationTokenizer(
+            tokenizer_type=cfg.sacrebleu_tokenizer,
+            lowercase=cfg.sacrebleu_lowercase,
+            character_tokenization=cfg.sacrebleu_char_level,
+        )
+
+    def add_string(self, ref, pred):
+        self.ref.append(self.tokenizer.tokenize(ref))
+        self.pred.append(self.tokenizer.tokenize(pred))
+
+    def score(self, order=4):
+        return self.result_string(order).score
+
+    def result_string(self, order=4):
+        if order != 4:
+            raise NotImplementedError
+        # tokenization and lowercasing are performed by self.tokenizer instead.
+        return self.sacrebleu.corpus_bleu(
+            self.pred, [self.ref], tokenize="none"
+        ).format()
+
+
+
+
+
+

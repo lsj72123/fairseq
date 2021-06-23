@@ -30,7 +30,7 @@ class LabelSmoothedDualImitationCriterion(FairseqCriterion):
         )
 
     def _compute_loss(
-        self, outputs, targets, masks=None, label_smoothing=0.0, name="loss", factor=1.0
+            self, outputs, targets, masks=None, label_smoothing=0.0, name="loss", factor=1.0
     ):
         """
         outputs: batch x len x d_model
@@ -66,7 +66,7 @@ class LabelSmoothedDualImitationCriterion(FairseqCriterion):
             nll_loss = mean_ds(losses)
             if label_smoothing > 0:
                 loss = (
-                    nll_loss * (1 - label_smoothing) - mean_ds(logits) * label_smoothing
+                        nll_loss * (1 - label_smoothing) - mean_ds(logits) * label_smoothing
                 )
             else:
                 loss = nll_loss

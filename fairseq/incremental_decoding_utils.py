@@ -10,6 +10,13 @@ from torch import Tensor
 
 
 class FairseqIncrementalState(object):
+
+
+
+
+
+
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.init_incremental_state()

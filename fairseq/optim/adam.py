@@ -17,83 +17,7 @@ from fairseq.optim import FairseqOptimizer, register_optimizer
 from fairseq.optim.fused_adam import get_fused_adam_class
 from omegaconf import II, OmegaConf
 
-
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class FairseqAdamConfig(FairseqDataclass):
-    adam_betas: Any = field(
-        default=(0.9, 0.999), metadata={"help": "betas for Adam optimizer"}
-    )
-    adam_eps: float = field(
-        default=1e-8, metadata={"help": "epsilon for Adam optimizer"}
-    )
-    weight_decay: float = field(default=0.0, metadata={"help": "weight decay"})
-    use_old_adam: bool = field(
-        default=False, metadata={"help": "Use fairseq.optim.adam.Adam"}
-    )
-    # TODO common vars below in parent
-    tpu: bool = II("common.tpu")
-    lr: List[float] = II("optimization.lr")
-
-
-@register_optimizer("adam", dataclass=FairseqAdamConfig)
-class FairseqAdam(FairseqOptimizer):
-    """Adam optimizer for fairseq.
-
-    Important note: this optimizer corresponds to the "AdamW" variant of
-    Adam in its weight decay behavior. As such, it is most closely
-    analogous to torch.optim.AdamW from PyTorch.
-    """
-
-    def __init__(self, cfg: FairseqAdamConfig, params):
-        super().__init__(cfg)
-        fused_adam_cls = get_fused_adam_class()
-        use_fused_adam = (
-            not getattr(cfg, "use_old_adam", False)
-            and fused_adam_cls is not None
-            and torch.cuda.is_available()
-        )
-        if getattr(cfg, "tpu", False):
-            # on TPUs we use the Adam defined here, since it
-            # automatically casts gradients to FP32
-            self._optimizer = Adam(params, **self.optimizer_config)
-        elif use_fused_adam:
-            logger.info("using FusedAdam")
-            self._optimizer = fused_adam_cls(params, **self.optimizer_config)
-        else:
-            self._optimizer = Adam(params, **self.optimizer_config)
-
-    @property
-    def optimizer_config(self):
-        """
-        Return a kwarg dictionary that will be used to override optimizer
-        args stored in checkpoints. This allows us to load a checkpoint and
-        resume training using a different set of optimizer args, e.g., with a
-        different learning rate.
-        """
-        return {
-            "lr": self.cfg.lr[0]
-            if isinstance(self.cfg.lr, Collection)
-            else self.cfg.lr,
-            "betas": eval(self.cfg.adam_betas)
-            if isinstance(self.cfg.adam_betas, str)
-            else OmegaConf.to_container(self.cfg.adam_betas),
-            "eps": self.cfg.adam_eps,
-            "weight_decay": self.cfg.weight_decay,
-        }
-
-    def average_params(self):
-        """Reduce Params is only used during BMUF distributed training."""
-        state_dict = self.optimizer.state_dict()
-        total_gpus = float(dist.get_world_size())
-
-        for _, value in state_dict["state"].items():
-            value["exp_avg"] /= total_gpus
-            value["exp_avg_sq"] /= total_gpus
-            dist.all_reduce(value["exp_avg"], op=dist.ReduceOp.SUM)
-            dist.all_reduce(value["exp_avg_sq"], op=dist.ReduceOp.SUM)
 
 
 class Adam(torch.optim.Optimizer):
@@ -124,13 +48,13 @@ class Adam(torch.optim.Optimizer):
     """
 
     def __init__(
-        self,
-        params,
-        lr=1e-3,
-        betas=(0.9, 0.999),
-        eps=1e-8,
-        weight_decay=0,
-        amsgrad=False,
+            self,
+            params,
+            lr=1e-3,
+            betas=(0.9, 0.999),
+            eps=1e-8,
+            weight_decay=0,
+            amsgrad=False,
     ):
         defaults = dict(
             lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, amsgrad=amsgrad
@@ -226,3 +150,95 @@ class Adam(torch.optim.Optimizer):
                     p.data.copy_(p_data_fp32)
 
         return loss
+
+
+@dataclass
+class FairseqAdamConfig(FairseqDataclass):
+    adam_betas: Any = field(
+        default=(0.9, 0.999),
+        metadata={"help": "betas for Adam optimizer"}
+    )
+    adam_eps: float = field(
+        default=1e-8,
+        metadata={"help": "epsilon for Adam optimizer"}
+    )
+    weight_decay: float = field(
+        default=0.0,
+        metadata={"help": "weight decay"})
+    use_old_adam: bool = field(
+        default=False,
+        metadata={"help": "Use fairseq.optim.adam.Adam"}
+    )
+    # TODO common vars below in parent
+    tpu: bool = II("common.tpu")
+    lr: List[float] = II("optimization.lr")
+
+
+@register_optimizer("adam", dataclass=FairseqAdamConfig)
+class FairseqAdam(FairseqOptimizer):
+    """Adam optimizer for fairseq.
+
+    Important note: this optimizer corresponds to the "AdamW" variant of
+    Adam in its weight decay behavior. As such, it is most closely
+    analogous to torch.optim.AdamW from PyTorch.
+    """
+
+    def __init__(self, cfg: FairseqAdamConfig, params):
+        super().__init__(cfg)
+        fused_adam_cls = get_fused_adam_class()
+        use_fused_adam = (
+                not getattr(cfg, "use_old_adam", False)
+                and fused_adam_cls is not None
+                and torch.cuda.is_available()
+        )
+        if getattr(cfg, "tpu", False):
+            # on TPUs we use the Adam defined here, since it
+            # automatically casts gradients to FP32
+            self._optimizer = Adam(params, **self.optimizer_config)
+        elif use_fused_adam:
+            logger.info("using FusedAdam")
+            self._optimizer = fused_adam_cls(params, **self.optimizer_config)
+        else:
+            self._optimizer = Adam(params, **self.optimizer_config)
+
+
+
+
+
+
+
+
+
+
+    @property
+    def optimizer_config(self):
+        """
+        Return a kwarg dictionary that will be used to override optimizer
+        args stored in checkpoints. This allows us to load a checkpoint and
+        resume training using a different set of optimizer args, e.g., with a
+        different learning rate.
+        """
+        return {
+            "lr": self.cfg.lr[0]
+            if isinstance(self.cfg.lr, Collection)
+            else self.cfg.lr,
+            "betas": eval(self.cfg.adam_betas)
+            if isinstance(self.cfg.adam_betas, str)
+            else OmegaConf.to_container(self.cfg.adam_betas),
+            "eps": self.cfg.adam_eps,
+            "weight_decay": self.cfg.weight_decay,
+        }
+
+    def average_params(self):
+        """Reduce Params is only used during BMUF distributed training."""
+        state_dict = self.optimizer.state_dict()
+        total_gpus = float(dist.get_world_size())
+
+        for _, value in state_dict["state"].items():
+            value["exp_avg"] /= total_gpus
+            value["exp_avg_sq"] /= total_gpus
+            dist.all_reduce(value["exp_avg"], op=dist.ReduceOp.SUM)
+            dist.all_reduce(value["exp_avg_sq"], op=dist.ReduceOp.SUM)
+
+
+

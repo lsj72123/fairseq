@@ -37,6 +37,10 @@ def get_fused_adam_class():
     return None
 
 
+
+
+
+
 class FusedAdamV1(torch.optim.Optimizer):
     """
     Implements Adam algorithm. Currently GPU-only. Requires Apex to be installed via

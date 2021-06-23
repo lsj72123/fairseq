@@ -21,6 +21,21 @@ class FastaDataset(torch.utils.data.Dataset):
     For loading protein sequence datasets in the common FASTA data format
     """
 
+    @staticmethod
+    def exists(path):
+        return os.path.exists(fasta_file_path(path))
+
+
+
+
+
+
+
+
+
+
+
+
     def __init__(self, path: str, cache_indices=False):
         self.fn = fasta_file_path(path)
         self.threadlocal = threading.local()
@@ -87,9 +102,7 @@ class FastaDataset(torch.utils.data.Dataset):
             self.threadlocal.f.close()
             del self.threadlocal.f
 
-    @staticmethod
-    def exists(path):
-        return os.path.exists(fasta_file_path(path))
+
 
 
 class EncodedFastaDataset(FastaDataset):

@@ -20,6 +20,7 @@ class CrossEntropyCriterionConfig(FairseqDataclass):
 
 @register_criterion("cross_entropy", dataclass=CrossEntropyCriterionConfig)
 class CrossEntropyCriterion(FairseqCriterion):
+
     def __init__(self, task, sentence_avg):
         super().__init__(task)
         self.sentence_avg = sentence_avg
@@ -58,7 +59,7 @@ class CrossEntropyCriterion(FairseqCriterion):
         return loss, loss
 
     @staticmethod
-    def reduce_metrics(logging_outputs) -> None:
+    def reduce_metrics(logging_outputs, **kwargs) -> None:
         """Aggregate logging outputs from data parallel training."""
         loss_sum = sum(log.get("loss", 0) for log in logging_outputs)
         ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)
@@ -79,6 +80,22 @@ class CrossEntropyCriterion(FairseqCriterion):
             metrics.log_derived(
                 "ppl", lambda meters: utils.get_perplexity(meters["loss"].avg)
             )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     @staticmethod
     def logging_outputs_can_be_summed() -> bool:

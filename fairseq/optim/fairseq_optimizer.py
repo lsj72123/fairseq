@@ -9,9 +9,6 @@ from fairseq.dataclass.utils import gen_parser_from_dataclass
 
 
 class FairseqOptimizer(object):
-    def __init__(self, cfg):
-        super().__init__()
-        self.cfg = cfg
 
     @classmethod
     def add_args(cls, parser):
@@ -19,6 +16,19 @@ class FairseqOptimizer(object):
         dc = getattr(cls, "__dataclass", None)
         if dc is not None:
             gen_parser_from_dataclass(parser, dc())
+
+    def __init__(self, cfg):
+        super().__init__()
+        self.cfg = cfg
+
+    def set_lr(self, lr):
+        """Set the learning rate."""
+        for param_group in self.param_groups:
+            param_group["lr"] = lr
+
+    @property
+    def param_groups(self):
+        return self.optimizer.param_groups
 
     @property
     def optimizer(self):
@@ -38,61 +48,9 @@ class FairseqOptimizer(object):
             raise ValueError("_optimizer must be an instance of torch.optim.Optimizer")
         self._optimizer = optimizer
 
-    @property
-    def optimizer_config(self):
-        """
-        Return a kwarg dictionary that will be used to override optimizer
-        args stored in checkpoints. This allows us to load a checkpoint and
-        resume training using a different set of optimizer args, e.g., with a
-        different learning rate.
-        """
-        raise NotImplementedError
-
-    @property
-    def params(self):
-        """Return an iterable of the parameters held by the optimizer."""
-        for param_group in self.param_groups:
-            for p in param_group["params"]:
-                yield p
-
-    @property
-    def param_groups(self):
-        return self.optimizer.param_groups
-
-    def __getstate__(self):
-        return self._optimizer.__getstate__()
-
     def get_lr(self):
         """Return the current learning rate."""
         return self.param_groups[0]["lr"]
-
-    def set_lr(self, lr):
-        """Set the learning rate."""
-        for param_group in self.param_groups:
-            param_group["lr"] = lr
-
-    def state_dict(self):
-        """Return the optimizer's state dict."""
-        return self.optimizer.state_dict()
-
-    def load_state_dict(self, state_dict, optimizer_overrides=None):
-        """Load an optimizer state dict.
-
-        In general we should prefer the configuration of the existing optimizer
-        instance (e.g., learning rate) over that found in the state_dict. This
-        allows us to resume training from a checkpoint using a new set of
-        optimizer args.
-        """
-        self.optimizer.load_state_dict(state_dict)
-
-        if optimizer_overrides is not None and len(optimizer_overrides) > 0:
-            # override learning rate, momentum, etc. with latest values
-            for group in self.param_groups:
-                group.update(optimizer_overrides)
-
-    def backward(self, loss):
-        """Computes the sum of gradients of the given tensor w.r.t. graph leaves."""
-        loss.backward()
 
     def all_reduce_grads(self, module):
         """Manually all-reduce gradients (if required)."""
@@ -111,6 +69,10 @@ class FairseqOptimizer(object):
         """Clips gradient norm."""
         return utils.clip_grad_norm_(self.params, max_norm, aggregate_norm_fn)
 
+    def backward(self, loss):
+        """Computes the sum of gradients of the given tensor w.r.t. graph leaves."""
+        loss.backward()
+
     def step(self, closure=None, scale=1.0, groups=None):
         """Performs a single optimization step."""
         if self.supports_step_with_scale:
@@ -126,11 +88,69 @@ class FairseqOptimizer(object):
             else:
                 self.optimizer.step(closure)
 
+    @property
+    def optimizer_config(self):
+        """
+        Return a kwarg dictionary that will be used to override optimizer
+        args stored in checkpoints. This allows us to load a checkpoint and
+        resume training using a different set of optimizer args, e.g., with a
+        different learning rate.
+        """
+        raise NotImplementedError
+
+    @property
+    def params(self):
+        """Return an iterable of the parameters held by the optimizer."""
+        for param_group in self.param_groups:
+            for p in param_group["params"]:
+                yield p
+
+    def state_dict(self):
+        """Return the optimizer's state dict."""
+        return self.optimizer.state_dict()
+
     def zero_grad(self):
         """Clears the gradients of all optimized parameters."""
         for p in self.params:
             p.grad = None
         self.optimizer.zero_grad()
+
+    def __getstate__(self):
+        return self._optimizer.__getstate__()
+
+    def average_params(self):
+        pass
+
+    def load_state_dict(self, state_dict, optimizer_overrides=None):
+        """Load an optimizer state dict.
+
+        In general we should prefer the configuration of the existing optimizer
+        instance (e.g., learning rate) over that found in the state_dict. This
+        allows us to resume training from a checkpoint using a new set of
+        optimizer args.
+        """
+        self.optimizer.load_state_dict(state_dict)
+
+        if optimizer_overrides is not None and len(optimizer_overrides) > 0:
+            # override learning rate, momentum, etc. with latest values
+            for group in self.param_groups:
+                group.update(optimizer_overrides)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     @property
     def supports_memory_efficient_fp16(self):
@@ -160,8 +180,7 @@ class FairseqOptimizer(object):
             return self.optimizer.supports_flat_params
         return False
 
-    def average_params(self):
-        pass
+
 
     def broadcast_global_state_dict(self, state_dict):
         """

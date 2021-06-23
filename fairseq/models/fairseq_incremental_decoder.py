@@ -10,7 +10,6 @@ from fairseq.incremental_decoding_utils import with_incremental_state
 from fairseq.models import FairseqDecoder
 from torch import Tensor
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -41,7 +40,7 @@ class FairseqIncrementalDecoder(FairseqDecoder):
         super().__init__(dictionary)
 
     def forward(
-        self, prev_output_tokens, encoder_out=None, incremental_state=None, **kwargs
+            self, prev_output_tokens, encoder_out=None, incremental_state=None, **kwargs
     ):
         """
         Args:
@@ -60,7 +59,7 @@ class FairseqIncrementalDecoder(FairseqDecoder):
         raise NotImplementedError
 
     def extract_features(
-        self, prev_output_tokens, encoder_out=None, incremental_state=None, **kwargs
+            self, prev_output_tokens, encoder_out=None, incremental_state=None, **kwargs
     ):
         """
         Returns:
@@ -71,9 +70,9 @@ class FairseqIncrementalDecoder(FairseqDecoder):
         raise NotImplementedError
 
     def reorder_incremental_state(
-        self,
-        incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
-        new_order: Tensor,
+            self,
+            incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
+            new_order: Tensor,
     ):
         """Reorder incremental state.
 
@@ -83,10 +82,19 @@ class FairseqIncrementalDecoder(FairseqDecoder):
         """
         pass
 
+
+
+
+
+
+
+
+
+
     def reorder_incremental_state_scripting(
-        self,
-        incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
-        new_order: Tensor,
+            self,
+            incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
+            new_order: Tensor,
     ):
         """Main entry point for reordering the incremental state.
 
@@ -107,9 +115,9 @@ class FairseqIncrementalDecoder(FairseqDecoder):
 
             def apply_set_beam_size(module):
                 if (
-                    module != self
-                    and hasattr(module, "set_beam_size")
-                    and module not in seen
+                        module != self
+                        and hasattr(module, "set_beam_size")
+                        and module not in seen
                 ):
                     seen.add(module)
                     module.set_beam_size(beam_size)

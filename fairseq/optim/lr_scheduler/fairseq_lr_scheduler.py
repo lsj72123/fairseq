@@ -10,13 +10,6 @@ from fairseq.optim import FairseqOptimizer
 
 
 class FairseqLRScheduler(object):
-    def __init__(self, cfg, optimizer):
-        super().__init__()
-        if optimizer is not None and not isinstance(optimizer, FairseqOptimizer):
-            raise ValueError("optimizer must be an instance of FairseqOptimizer")
-        self.cfg = cfg
-        self.optimizer = optimizer
-        self.best = None
 
     @classmethod
     def add_args(cls, parser):
@@ -25,17 +18,13 @@ class FairseqLRScheduler(object):
         if dc is not None:
             gen_parser_from_dataclass(parser, dc())
 
-    def state_dict(self):
-        """Return the LR scheduler state dict."""
-        return {"best": self.best}
-
-    def load_state_dict(self, state_dict):
-        """Load an LR scheduler state dict."""
-        self.best = state_dict["best"]
-
-    def step_begin_epoch(self, epoch):
-        """Update the learning rate at the beginning of the given epoch."""
-        pass
+    def __init__(self, cfg, optimizer):
+        super().__init__()
+        if optimizer is not None and not isinstance(optimizer, FairseqOptimizer):
+            raise ValueError("optimizer must be an instance of FairseqOptimizer")
+        self.cfg = cfg
+        self.optimizer = optimizer
+        self.best = None
 
     def step(self, epoch, val_loss=None):
         """Update the learning rate at the end of the given epoch."""
@@ -48,6 +37,19 @@ class FairseqLRScheduler(object):
     def step_update(self, num_updates):
         """Update the learning rate after each update."""
         return self.optimizer.get_lr()
+
+    def step_begin_epoch(self, epoch):
+        """Update the learning rate at the beginning of the given epoch."""
+        pass
+
+    def state_dict(self):
+        """Return the LR scheduler state dict."""
+        return {"best": self.best}
+
+    def load_state_dict(self, state_dict):
+        """Load an LR scheduler state dict."""
+        self.best = state_dict["best"]
+
 
 
 class LegacyFairseqLRScheduler(FairseqLRScheduler):

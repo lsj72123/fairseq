@@ -19,6 +19,14 @@ class FairseqDecoder(nn.Module):
         self.onnx_trace = False
         self.adaptive_softmax = None
 
+    def get_normalized_probs(
+            self,
+            net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
+            log_probs: bool,
+            sample: Optional[Dict[str, Tensor]] = None,
+    ):
+        """Get normalized probabilities (or log probs) from a net's output."""
+        return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
 
     def forward(self, prev_output_tokens, encoder_out=None, **kwargs):
         """
@@ -57,24 +65,19 @@ class FairseqDecoder(nn.Module):
         """
         raise NotImplementedError
 
-    def get_normalized_probs(
-        self,
-        net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
-        log_probs: bool,
-        sample: Optional[Dict[str, Tensor]] = None,
-    ):
-        """Get normalized probabilities (or log probs) from a net's output."""
-        return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
+    def max_positions(self):
+        """Maximum input length supported by the decoder."""
+        return 1e6  # an arbitrary large number
 
     # TorchScript doesn't support super() method so that the scriptable Subclass
     # can't access the base class model in Torchscript.
     # Current workaround is to add a helper function with different name and
     # call the helper function from scriptable Subclass.
     def get_normalized_probs_scriptable(
-        self,
-        net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
-        log_probs: bool,
-        sample: Optional[Dict[str, Tensor]] = None,
+            self,
+            net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
+            log_probs: bool,
+            sample: Optional[Dict[str, Tensor]] = None,
     ):
         """Get normalized probabilities (or log probs) from a net's output."""
 
@@ -93,9 +96,13 @@ class FairseqDecoder(nn.Module):
         else:
             return utils.softmax(logits, dim=-1, onnx_trace=self.onnx_trace)
 
-    def max_positions(self):
-        """Maximum input length supported by the decoder."""
-        return 1e6  # an arbitrary large number
+
+
+
+
+
+
+
 
     def upgrade_state_dict_named(self, state_dict, name):
         """Upgrade old state dicts to work with newer code."""

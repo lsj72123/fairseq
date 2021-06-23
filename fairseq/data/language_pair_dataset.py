@@ -9,19 +9,18 @@ import numpy as np
 import torch
 from fairseq.data import FairseqDataset, data_utils
 
-
 logger = logging.getLogger(__name__)
 
 
 def collate(
-    samples,
-    pad_idx,
-    eos_idx,
-    left_pad_source=True,
-    left_pad_target=False,
-    input_feeding=True,
-    pad_to_length=None,
-    pad_to_multiple=1,
+        samples,
+        pad_idx,
+        eos_idx,
+        left_pad_source=True,
+        left_pad_target=False,
+        input_feeding=True,
+        pad_to_length=None,
+        pad_to_multiple=1,
 ):
     if len(samples) == 0:
         return {}
@@ -41,8 +40,8 @@ def collate(
         if alignment is None or len(alignment) == 0:
             return False
         if (
-            alignment[:, 0].max().item() >= src_len - 1
-            or alignment[:, 1].max().item() >= tgt_len - 1
+                alignment[:, 0].max().item() >= src_len - 1
+                or alignment[:, 1].max().item() >= tgt_len - 1
         ):
             logger.warning("alignment size mismatch found, skipping alignment!")
             return False
@@ -99,7 +98,7 @@ def collate(
         elif input_feeding:
             # we create a shifted version of targets for feeding the
             # previous output token(s) into the next decoder step
-            prev_output_tokens = merge(
+            prev_output_tokens = merge( # <PAD><PAD>ABC<EOS> -> <PAD><PAD><EOS>ABC
                 "target",
                 left_pad=left_pad_target,
                 move_eos_to_beginning=True,
@@ -113,8 +112,8 @@ def collate(
     batch = {
         "id": id,
         "nsentences": len(samples),
-        "ntokens": ntokens,
-        "net_input": {"src_tokens": src_tokens, "src_lengths": src_lengths,},
+        "ntokens": ntokens, # here the ntokens is the target tokens if target is not None else source tokens
+        "net_input": {"src_tokens": src_tokens, "src_lengths": src_lengths, },
         "target": target,
     }
     if prev_output_tokens is not None:
@@ -122,7 +121,7 @@ def collate(
             0, sort_order
         )
 
-    if samples[0].get("alignment", None) is not None:
+    if samples[0].get("alignment", None) is not None:   # todo
         bsz, tgt_sz = batch["target"].shape
         src_sz = batch["net_input"]["src_tokens"].shape[1]
 
@@ -149,14 +148,14 @@ def collate(
             batch["alignments"] = alignments
             batch["align_weights"] = align_weights
 
-    if samples[0].get("constraints", None) is not None:
+    if samples[0].get("constraints", None) is not None: # todo
         # Collate the packed constraints across the samples, padding to
         # the length of the longest sample.
         lens = [sample.get("constraints").size(0) for sample in samples]
         max_len = max(lens)
         constraints = torch.zeros((len(samples), max(lens))).long()
         for i, sample in enumerate(samples):
-            constraints[i, 0 : lens[i]] = samples[i].get("constraints")
+            constraints[i, 0: lens[i]] = samples[i].get("constraints")
         batch["constraints"] = constraints.index_select(0, sort_order)
 
     return batch
@@ -202,36 +201,35 @@ class LanguagePairDataset(FairseqDataset):
     """
 
     def __init__(
-        self,
-        src,
-        src_sizes,
-        src_dict,
-        tgt=None,
-        tgt_sizes=None,
-        tgt_dict=None,
-        left_pad_source=True,
-        left_pad_target=False,
-        shuffle=True,
-        input_feeding=True,
-        remove_eos_from_source=False,
-        append_eos_to_target=False,
-        align_dataset=None,
-        constraints=None,
-        append_bos=False,
-        eos=None,
-        num_buckets=0,
-        src_lang_id=None,
-        tgt_lang_id=None,
-        pad_to_multiple=1,
+            self,
+            src,
+            src_sizes,
+            src_dict,
+            tgt=None,
+            tgt_sizes=None,
+            tgt_dict=None,
+            left_pad_source=True,
+            left_pad_target=False,
+            shuffle=True,
+            input_feeding=True,
+            remove_eos_from_source=False,
+            append_eos_to_target=False,
+            align_dataset=None,
+            constraints=None,
+            append_bos=False,
+            eos=None,
+            num_buckets=0,
+            src_lang_id=None,
+            tgt_lang_id=None,
+            pad_to_multiple=1,
     ):
         if tgt_dict is not None:
             assert src_dict.pad() == tgt_dict.pad()
             assert src_dict.eos() == tgt_dict.eos()
             assert src_dict.unk() == tgt_dict.unk()
         if tgt is not None:
-            assert len(src) == len(
-                tgt
-            ), "Source and target must contain the same number of examples"
+            assert len(src) == len(tgt), "Source and target must contain the same number of examples"
+
         self.src = src
         self.tgt = tgt
         self.src_sizes = np.array(src_sizes)
@@ -252,14 +250,14 @@ class LanguagePairDataset(FairseqDataset):
         self.align_dataset = align_dataset
         if self.align_dataset is not None:
             assert (
-                self.tgt_sizes is not None
+                    self.tgt_sizes is not None
             ), "Both source and target needed when alignments are provided"
         self.constraints = constraints
         self.append_bos = append_bos
         self.eos = eos if eos is not None else src_dict.eos()
         self.src_lang_id = src_lang_id
         self.tgt_lang_id = tgt_lang_id
-        if num_buckets > 0:
+        if num_buckets > 0:  # todo
             from fairseq.data import BucketPadLengthDataset
 
             self.src = BucketPadLengthDataset(
@@ -293,50 +291,58 @@ class LanguagePairDataset(FairseqDataset):
             ]
         else:
             self.buckets = None
+
         self.pad_to_multiple = pad_to_multiple
+
+    def ordered_indices(self):
+        """Return an ordered list of indices. Batches will be constructed based
+        on this order."""
+        if self.shuffle:
+            indices = np.random.permutation(len(self)).astype(np.int64)
+        else:
+            indices = np.arange(len(self), dtype=np.int64)
+
+        if self.buckets is None:
+            # sort by target length, then source length
+            if self.tgt_sizes is not None:
+                indices = indices[np.argsort(self.tgt_sizes[indices], kind="mergesort")]
+
+            return indices[np.argsort(self.src_sizes[indices], kind="mergesort")]
+
+        else:
+            # sort by bucketed_num_tokens, which is:
+            #   max(padded_src_len, padded_tgt_len)
+            return indices[
+                np.argsort(self.bucketed_num_tokens[indices], kind="mergesort")
+            ]
+
+    def filter_indices_by_size(self, indices, max_sizes):
+        """Filter a list of sample indices. Remove those that are longer
+            than specified in max_sizes.
+
+        Args:
+            indices (np.array): original array of sample indices
+            max_sizes (int or list[int] or tuple[int]): max sample size,
+                can be defined separately for src and tgt (then list or tuple)
+
+        Returns:
+            np.array: filtered sample array
+            list: list of removed indices
+        """
+        return data_utils.filter_paired_dataset_indices_by_size(
+            self.src_sizes, self.tgt_sizes, indices, max_sizes,
+        )
+
+    def num_tokens_vec(self, indices):
+        """Return the number of tokens for a set of positions defined by indices.
+        This value is used to enforce ``--max-tokens`` during batching."""
+        sizes = self.src_sizes[indices]
+        if self.tgt_sizes is not None:
+            sizes = np.maximum(sizes, self.tgt_sizes[indices])
+        return sizes    # size is the maximize size of source and target
 
     def get_batch_shapes(self):
         return self.buckets
-
-    def __getitem__(self, index):
-        tgt_item = self.tgt[index] if self.tgt is not None else None
-        src_item = self.src[index]
-        # Append EOS to end of tgt sentence if it does not have an EOS and remove
-        # EOS from end of src sentence if it exists. This is useful when we use
-        # use existing datasets for opposite directions i.e., when we want to
-        # use tgt_dataset as src_dataset and vice versa
-        if self.append_eos_to_target:
-            eos = self.tgt_dict.eos() if self.tgt_dict else self.src_dict.eos()
-            if self.tgt and self.tgt[index][-1] != eos:
-                tgt_item = torch.cat([self.tgt[index], torch.LongTensor([eos])])
-
-        if self.append_bos:
-            bos = self.tgt_dict.bos() if self.tgt_dict else self.src_dict.bos()
-            if self.tgt and self.tgt[index][0] != bos:
-                tgt_item = torch.cat([torch.LongTensor([bos]), self.tgt[index]])
-
-            bos = self.src_dict.bos()
-            if self.src[index][0] != bos:
-                src_item = torch.cat([torch.LongTensor([bos]), self.src[index]])
-
-        if self.remove_eos_from_source:
-            eos = self.src_dict.eos()
-            if self.src[index][-1] == eos:
-                src_item = self.src[index][:-1]
-
-        example = {
-            "id": index,
-            "source": src_item,
-            "target": tgt_item,
-        }
-        if self.align_dataset is not None:
-            example["alignment"] = self.align_dataset[index]
-        if self.constraints is not None:
-            example["constraints"] = self.constraints[index]
-        return example
-
-    def __len__(self):
-        return len(self.src)
 
     def collater(self, samples, pad_to_length=None):
         """Merge a list of samples to form a mini-batch.
@@ -384,6 +390,7 @@ class LanguagePairDataset(FairseqDataset):
             pad_to_length=pad_to_length,
             pad_to_multiple=self.pad_to_multiple,
         )
+        # todo, here it seams like using language id.
         if self.src_lang_id is not None or self.tgt_lang_id is not None:
             src_tokens = res["net_input"]["src_tokens"]
             bsz = src_tokens.size(0)
@@ -397,6 +404,86 @@ class LanguagePairDataset(FairseqDataset):
                 )
         return res
 
+    def __getitem__(self, index):
+        tgt_item = self.tgt[index] if self.tgt is not None else None
+        src_item = self.src[index]
+        # Append EOS to end of tgt sentence if it does not have an EOS and remove
+        # EOS from end of src sentence if it exists. This is useful when we use
+        # use existing datasets for opposite directions i.e., when we want to
+        # use tgt_dataset as src_dataset and vice versa
+        if self.append_eos_to_target:
+            eos = self.tgt_dict.eos() if self.tgt_dict else self.src_dict.eos()
+            if self.tgt and self.tgt[index][-1] != eos:
+                tgt_item = torch.cat([self.tgt[index], torch.LongTensor([eos])])
+
+        if self.append_bos:
+            bos = self.tgt_dict.bos() if self.tgt_dict else self.src_dict.bos()
+            if self.tgt and self.tgt[index][0] != bos:
+                tgt_item = torch.cat([torch.LongTensor([bos]), self.tgt[index]])
+
+            bos = self.src_dict.bos()
+            if self.src[index][0] != bos:
+                src_item = torch.cat([torch.LongTensor([bos]), self.src[index]])
+
+        if self.remove_eos_from_source:
+            eos = self.src_dict.eos()
+            if self.src[index][-1] == eos:
+                src_item = self.src[index][:-1]
+
+        example = {
+            "id": index,
+            "source": src_item,
+            "target": tgt_item,
+        }
+        if self.align_dataset is not None:  # todo
+            example["alignment"] = self.align_dataset[index]
+        if self.constraints is not None:    # todo
+            example["constraints"] = self.constraints[index]
+        return example
+
+    def __len__(self):
+        return len(self.src)
+
+    @property
+    def supports_prefetch(self):
+        return getattr(self.src, "supports_prefetch", False) and (
+                getattr(self.tgt, "supports_prefetch", False) or self.tgt is None
+        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     def num_tokens(self, index):
         """Return the number of tokens in a sample. This value is used to
         enforce ``--max-tokens`` during batching."""
@@ -405,13 +492,7 @@ class LanguagePairDataset(FairseqDataset):
             self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
         )
 
-    def num_tokens_vec(self, indices):
-        """Return the number of tokens for a set of positions defined by indices.
-        This value is used to enforce ``--max-tokens`` during batching."""
-        sizes = self.src_sizes[indices]
-        if self.tgt_sizes is not None:
-            sizes = np.maximum(sizes, self.tgt_sizes[indices])
-        return sizes
+
 
     def size(self, index):
         """Return an example's size as a float or tuple. This value is used when
@@ -421,30 +502,9 @@ class LanguagePairDataset(FairseqDataset):
             self.tgt_sizes[index] if self.tgt_sizes is not None else 0,
         )
 
-    def ordered_indices(self):
-        """Return an ordered list of indices. Batches will be constructed based
-        on this order."""
-        if self.shuffle:
-            indices = np.random.permutation(len(self)).astype(np.int64)
-        else:
-            indices = np.arange(len(self), dtype=np.int64)
-        if self.buckets is None:
-            # sort by target length, then source length
-            if self.tgt_sizes is not None:
-                indices = indices[np.argsort(self.tgt_sizes[indices], kind="mergesort")]
-            return indices[np.argsort(self.src_sizes[indices], kind="mergesort")]
-        else:
-            # sort by bucketed_num_tokens, which is:
-            #   max(padded_src_len, padded_tgt_len)
-            return indices[
-                np.argsort(self.bucketed_num_tokens[indices], kind="mergesort")
-            ]
 
-    @property
-    def supports_prefetch(self):
-        return getattr(self.src, "supports_prefetch", False) and (
-            getattr(self.tgt, "supports_prefetch", False) or self.tgt is None
-        )
+
+
 
     def prefetch(self, indices):
         self.src.prefetch(indices)
@@ -453,19 +513,50 @@ class LanguagePairDataset(FairseqDataset):
         if self.align_dataset is not None:
             self.align_dataset.prefetch(indices)
 
-    def filter_indices_by_size(self, indices, max_sizes):
-        """Filter a list of sample indices. Remove those that are longer
-            than specified in max_sizes.
 
-        Args:
-            indices (np.array): original array of sample indices
-            max_sizes (int or list[int] or tuple[int]): max sample size,
-                can be defined separately for src and tgt (then list or tuple)
 
-        Returns:
-            np.array: filtered sample array
-            list: list of removed indices
-        """
-        return data_utils.filter_paired_dataset_indices_by_size(
-            self.src_sizes, self.tgt_sizes, indices, max_sizes,
-        )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

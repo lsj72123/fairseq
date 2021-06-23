@@ -13,48 +13,6 @@ from fairseq.modules.quant_noise import quant_noise
 from torch import nn
 
 
-class TiedLinear(nn.Module):
-    def __init__(self, weight, transpose):
-        super().__init__()
-        self.weight = weight
-        self.transpose = transpose
-
-    def forward(self, input):
-        return F.linear(input, self.weight.t() if self.transpose else self.weight)
-
-
-class TiedHeadModule(nn.Module):
-    def __init__(self, weights, input_dim, num_classes, q_noise, qn_block_size):
-        super().__init__()
-        tied_emb, _ = weights
-        self.num_words, emb_dim = tied_emb.size()
-
-        self.word_proj = quant_noise(
-            TiedLinear(tied_emb, transpose=False), q_noise, qn_block_size
-        )
-        if input_dim != emb_dim:
-            self.word_proj = nn.Sequential(
-                quant_noise(
-                    nn.Linear(input_dim, emb_dim, bias=False), q_noise, qn_block_size
-                ),
-                self.word_proj,
-            )
-
-        self.class_proj = quant_noise(
-            nn.Linear(input_dim, num_classes, bias=False), q_noise, qn_block_size
-        )
-        self.out_dim = self.num_words + num_classes
-
-        self.register_buffer("_float_tensor", torch.FloatTensor(1))
-
-    def forward(self, input):
-        inp_sz = functools.reduce(operator.mul, input.shape[:-1], 1)
-        out = self._float_tensor.new(inp_sz, self.out_dim)
-        out[:, : self.num_words] = self.word_proj(input.view(inp_sz, -1))
-        out[:, self.num_words :] = self.class_proj(input.view(inp_sz, -1))
-        return out
-
-
 class AdaptiveSoftmax(nn.Module):
     """
     This is an implementation of the efficient softmax approximation for
@@ -266,3 +224,57 @@ class AdaptiveSoftmax(nn.Module):
 
         log_probs = log_probs.view(bsz, length, -1)
         return log_probs
+
+
+
+
+
+
+
+
+
+
+
+class TiedLinear(nn.Module):
+    def __init__(self, weight, transpose):
+        super().__init__()
+        self.weight = weight
+        self.transpose = transpose
+
+    def forward(self, input):
+        return F.linear(input, self.weight.t() if self.transpose else self.weight)
+
+
+class TiedHeadModule(nn.Module):
+    def __init__(self, weights, input_dim, num_classes, q_noise, qn_block_size):
+        super().__init__()
+        tied_emb, _ = weights
+        self.num_words, emb_dim = tied_emb.size()
+
+        self.word_proj = quant_noise(
+            TiedLinear(tied_emb, transpose=False), q_noise, qn_block_size
+        )
+        if input_dim != emb_dim:
+            self.word_proj = nn.Sequential(
+                quant_noise(
+                    nn.Linear(input_dim, emb_dim, bias=False), q_noise, qn_block_size
+                ),
+                self.word_proj,
+            )
+
+        self.class_proj = quant_noise(
+            nn.Linear(input_dim, num_classes, bias=False), q_noise, qn_block_size
+        )
+        self.out_dim = self.num_words + num_classes
+
+        self.register_buffer("_float_tensor", torch.FloatTensor(1))
+
+    def forward(self, input):
+        inp_sz = functools.reduce(operator.mul, input.shape[:-1], 1)
+        out = self._float_tensor.new(inp_sz, self.out_dim)
+        out[:, : self.num_words] = self.word_proj(input.view(inp_sz, -1))
+        out[:, self.num_words :] = self.class_proj(input.view(inp_sz, -1))
+        return out
+
+
+

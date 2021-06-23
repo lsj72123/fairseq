@@ -12,7 +12,6 @@ import torch.nn as nn
 from ..pq.utils import attrsetter, get_layers
 from .modules import ActivationQuantizer, IntConv2d, IntEmbedding, IntLinear
 
-
 MAPPING = {nn.Linear: IntLinear, nn.Embedding: IntEmbedding, nn.Conv2d: IntConv2d}
 
 
@@ -35,7 +34,7 @@ def quantize_model_(model, p=0.2, bits=8, update_step=3000):
 
         # book-keeping
         is_master_process = (not dist.is_initialized()) or (
-            dist.is_initialized() and dist.get_rank() == 0
+                dist.is_initialized() and dist.get_rank() == 0
         )
 
         # recover module

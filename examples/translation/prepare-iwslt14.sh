@@ -46,6 +46,10 @@ fi
 tar zxvf $GZ
 cd ..
 
+# tag means file contains all the tags of sentence such as <url> and <talkid>
+# remove all the lines contain <url> <talkid> and <keywords>
+# and replace all the <title> <\/title> <description> and </description> with space
+# TOKENIZER will split all the Punctuation and the intermediate Punctuation will be replaced by $apos
 echo "pre-processing train data..."
 for l in $src $tgt; do
     f=train.tags.$lang.$l
@@ -101,7 +105,7 @@ TRAIN=$tmp/train.en-de
 BPE_CODE=$prep/code
 rm -f $TRAIN
 for l in $src $tgt; do
-    cat $tmp/train.$l >> $TRAIN
+    cat /train$tmp.$l >> $TRAIN
 done
 
 echo "learn_bpe.py on ${TRAIN}..."

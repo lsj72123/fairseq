@@ -14,36 +14,10 @@ from hydra.core.config_store import ConfigStore
 
 from .fairseq_task import FairseqTask, LegacyFairseqTask  # noqa
 
-
 # register dataclass
 TASK_DATACLASS_REGISTRY = {}
 TASK_REGISTRY = {}
 TASK_CLASS_NAMES = set()
-
-
-def setup_task(cfg: FairseqDataclass, **kwargs):
-    task = None
-    task_name = getattr(cfg, "task", None)
-
-    if isinstance(task_name, str):
-        # legacy tasks
-        task = TASK_REGISTRY[task_name]
-        if task_name in TASK_DATACLASS_REGISTRY:
-            dc = TASK_DATACLASS_REGISTRY[task_name]
-            cfg = populate_dataclass(dc(), cfg)
-    else:
-        task_name = getattr(cfg, "_name", None)
-
-        if task_name and task_name in TASK_DATACLASS_REGISTRY:
-            dc = TASK_DATACLASS_REGISTRY[task_name]
-            cfg = merge_with_parent(dc(), cfg)
-            task = TASK_REGISTRY[task_name]
-
-    assert (
-        task is not None
-    ), f"Could not infer task type from {cfg}. Available tasks: {TASK_REGISTRY.keys()}"
-
-    return task.setup_task(cfg, **kwargs)
 
 
 def register_task(name, dataclass=None):
@@ -64,6 +38,7 @@ def register_task(name, dataclass=None):
 
     Args:
         name (str): the name of the task
+        dataclass:
     """
 
     def register_task_cls(cls):
@@ -105,13 +80,38 @@ def get_task(name):
     return TASK_REGISTRY[name]
 
 
+def setup_task(cfg: FairseqDataclass, **kwargs):
+    task = None
+    task_name = getattr(cfg, "task", None)
+
+    if isinstance(task_name, str):
+        # legacy tasks
+        task = TASK_REGISTRY[task_name]
+        if task_name in TASK_DATACLASS_REGISTRY:
+            dc = TASK_DATACLASS_REGISTRY[task_name]
+            cfg = populate_dataclass(dc(), cfg)
+    else:
+        task_name = getattr(cfg, "_name", None)
+
+        if task_name and task_name in TASK_DATACLASS_REGISTRY:
+            dc = TASK_DATACLASS_REGISTRY[task_name]
+            cfg = merge_with_parent(dc(), cfg)
+            task = TASK_REGISTRY[task_name]
+
+    assert (
+            task is not None
+    ), f"Could not infer task type from {cfg}. Available tasks: {TASK_REGISTRY.keys()}"
+
+    return task.setup_task(cfg, **kwargs)
+
+
 def import_tasks(tasks_dir, namespace):
     for file in os.listdir(tasks_dir):
         path = os.path.join(tasks_dir, file)
         if (
-            not file.startswith("_")
-            and not file.startswith(".")
-            and (file.endswith(".py") or os.path.isdir(path))
+                not file.startswith("_")
+                and not file.startswith(".")
+                and (file.endswith(".py") or os.path.isdir(path))
         ):
             task_name = file[: file.find(".py")] if file.endswith(".py") else file
             importlib.import_module(namespace + "." + task_name)

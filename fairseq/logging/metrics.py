@@ -18,7 +18,6 @@ from typing import Callable, List, Optional
 
 from .meters import *
 
-
 # Aggregation contexts are considered "active" when inside the scope
 # created by the :func:`aggregate` context manager.
 _aggregators = OrderedDict()
@@ -38,7 +37,127 @@ def reset() -> None:
     _active_aggregators_cnt["default"] = 1
 
 
-reset()
+reset()  # reactivate a MetersDict()
+
+
+def get_active_aggregators() -> List[MetersDict]:
+    return list(_active_aggregators.values())
+
+
+def log_start_time(key: str, priority: int = 40, round: Optional[int] = None):
+    """Log the duration of some event in seconds.
+
+    The duration will be computed once :func:`log_stop_time` is called.
+
+    Args:
+        key (str): name of the field to log
+        priority (int): smaller values are logged earlier in the output
+        round (Optional[int]): number of digits to round to when displaying
+    """
+    for agg in get_active_aggregators():
+        if key not in agg:
+            agg.add_meter(key, StopwatchMeter(round=round), priority)
+        agg[key].start()
+
+
+def log_scalar(key: str, value: float, weight: float = 1, priority: int = 10, round: Optional[int] = None):
+    """Log a scalar value.
+
+    Args:
+        key (str): name of the field to log
+        value (float): value to log
+        weight (float): weight that this value contributes to the average.
+            A weight of 0 will always log the latest value.
+        priority (int): smaller values are logged earlier in the output
+        round (Optional[int]): number of digits to round to when displaying
+    """
+    for agg in get_active_aggregators():
+        if key not in agg:
+            agg.add_meter(key, AverageMeter(round=round), priority)
+        agg[key].update(value, weight)
+
+
+def log_speed(key: str, value: float, priority: int = 30, round: Optional[int] = None,
+):
+    """Log the rate of some quantity per second.
+
+    Args:
+        key (str): name of the field to log
+        value (float): value to log
+        priority (int): smaller values are logged earlier in the output
+        round (Optional[int]): number of digits to round to when displaying
+    """
+    for agg in get_active_aggregators():
+        if key not in agg:
+            agg.add_meter(key, TimeMeter(round=round), priority)
+            agg[key].reset()  # reset meter on the first call
+        else:
+            agg[key].update(value)
+
+
+def log_stop_time(key: str, weight: float = 0.0, prehook=None):
+    """Log the duration of some event in seconds.
+
+    The duration will be computed since :func:`log_start_time` was called.
+    Set weight > 0 to report the average time instead of the sum.
+
+    Args:
+        key (str): name of the field to log
+        weight (float): weight that this time contributes to the average
+        prehook (function, no arguments): will be called before the timer
+        is stopped. For example, use prehook=torch.cuda.synchronize to
+        make sure all gpu operations are done before timer is stopped.
+    """
+    for agg in get_active_aggregators():
+        if key in agg:
+            agg[key].stop(weight, prehook)
+
+
+def log_scalar_sum(key: str, value: float, priority: int = 10, round: Optional[int] = None):
+    """Log a scalar value that is summed for reporting.
+
+    Args:
+        key (str): name of the field to log
+        value (float): value to log
+        priority (int): smaller values are logged earlier in the output
+        round (Optional[int]): number of digits to round to when displaying
+    """
+    for agg in get_active_aggregators():
+        if key not in agg:
+            agg.add_meter(key, SumMeter(round=round), priority)
+        agg[key].update(value)
+
+
+def log_custom(new_meter_fn: Callable[[], Meter], key: str, *args, priority: int = 50, **kwargs):
+    """Log using a custom Meter.
+
+    Any extra *args* or *kwargs* will be passed through to the Meter's
+    *update* method.
+
+    Args:
+        new_meter_fn (Callable[[], Meter]): function that returns a new
+            Meter instance
+        key (str): name of the field to log
+        priority (int): smaller values are logged earlier in the output
+    """
+    for agg in get_active_aggregators():
+        if key not in agg:
+            agg.add_meter(key, new_meter_fn(), priority)
+        agg[key].update(*args, **kwargs)
+
+
+def log_derived(key: str, fn: Callable[[MetersDict], float], priority: int = 20):
+    """Log a scalar value derived from other meters.
+
+    Args:
+        key (str): name of the field to log
+        fn (Callable[[MetersDict], float]): function that takes a single
+            argument *meters* and returns the derived value
+        priority (int): smaller values are logged earlier in the output
+    """
+    for agg in get_active_aggregators():
+        if key not in agg:
+            agg.add_meter(key, MetersDict._DerivedMeter(fn), priority)
 
 
 @contextlib.contextmanager
@@ -104,158 +223,29 @@ def aggregate(name: Optional[str] = None, new_root: bool = False):
         _active_aggregators_cnt.update(backup_aggregators_cnt)
 
 
-def get_active_aggregators() -> List[MetersDict]:
-    return list(_active_aggregators.values())
-
-
-def log_scalar(
-    key: str,
-    value: float,
-    weight: float = 1,
-    priority: int = 10,
-    round: Optional[int] = None,
-):
-    """Log a scalar value.
-
-    Args:
-        key (str): name of the field to log
-        value (float): value to log
-        weight (float): weight that this value contributes to the average.
-            A weight of 0 will always log the latest value.
-        priority (int): smaller values are logged earlier in the output
-        round (Optional[int]): number of digits to round to when displaying
-    """
-    for agg in get_active_aggregators():
-        if key not in agg:
-            agg.add_meter(key, AverageMeter(round=round), priority)
-        agg[key].update(value, weight)
-
-def log_scalar_sum(
-    key: str,
-    value: float,
-    priority: int = 10,
-    round: Optional[int] = None,
-):
-    """Log a scalar value that is summed for reporting.
-
-    Args:
-        key (str): name of the field to log
-        value (float): value to log
-        priority (int): smaller values are logged earlier in the output
-        round (Optional[int]): number of digits to round to when displaying
-    """
-    for agg in get_active_aggregators():
-        if key not in agg:
-            agg.add_meter(key, SumMeter(round=round), priority)
-        agg[key].update(value)
-
-
-def log_derived(key: str, fn: Callable[[MetersDict], float], priority: int = 20):
-    """Log a scalar value derived from other meters.
-
-    Args:
-        key (str): name of the field to log
-        fn (Callable[[MetersDict], float]): function that takes a single
-            argument *meters* and returns the derived value
-        priority (int): smaller values are logged earlier in the output
-    """
-    for agg in get_active_aggregators():
-        if key not in agg:
-            agg.add_meter(key, MetersDict._DerivedMeter(fn), priority)
-
-
-def log_speed(
-    key: str,
-    value: float,
-    priority: int = 30,
-    round: Optional[int] = None,
-):
-    """Log the rate of some quantity per second.
-
-    Args:
-        key (str): name of the field to log
-        value (float): value to log
-        priority (int): smaller values are logged earlier in the output
-        round (Optional[int]): number of digits to round to when displaying
-    """
-    for agg in get_active_aggregators():
-        if key not in agg:
-            agg.add_meter(key, TimeMeter(round=round), priority)
-            agg[key].reset()  # reset meter on the first call
-        else:
-            agg[key].update(value)
-
-
-def log_start_time(key: str, priority: int = 40, round: Optional[int] = None):
-    """Log the duration of some event in seconds.
-
-    The duration will be computed once :func:`log_stop_time` is called.
-
-    Args:
-        key (str): name of the field to log
-        priority (int): smaller values are logged earlier in the output
-        round (Optional[int]): number of digits to round to when displaying
-    """
-    for agg in get_active_aggregators():
-        if key not in agg:
-            agg.add_meter(key, StopwatchMeter(round=round), priority)
-        agg[key].start()
-
-
-def log_stop_time(key: str, weight: float = 0.0, prehook=None):
-    """Log the duration of some event in seconds.
-
-    The duration will be computed since :func:`log_start_time` was called.
-    Set weight > 0 to report the average time instead of the sum.
-
-    Args:
-        key (str): name of the field to log
-        weight (float): weight that this time contributes to the average
-        prehook (function, no arguments): will be called before the timer
-        is stopped. For example, use prehook=torch.cuda.synchronize to
-        make sure all gpu operations are done before timer is stopped.
-    """
-    for agg in get_active_aggregators():
-        if key in agg:
-            agg[key].stop(weight, prehook)
-
-
-def log_custom(
-    new_meter_fn: Callable[[], Meter],
-    key: str,
-    *args,
-    priority: int = 50,
-    **kwargs,
-):
-    """Log using a custom Meter.
-
-    Any extra *args* or *kwargs* will be passed through to the Meter's
-    *update* method.
-
-    Args:
-        new_meter_fn (Callable[[], Meter]): function that returns a new
-            Meter instance
-        key (str): name of the field to log
-        priority (int): smaller values are logged earlier in the output
-    """
-    for agg in get_active_aggregators():
-        if key not in agg:
-            agg.add_meter(key, new_meter_fn(), priority)
-        agg[key].update(*args, **kwargs)
-
-
-def reset_meter(name: str, key: str) -> None:
-    """Reset Meter instance aggregated under a given *name* and *key*."""
-    meter = get_meter(name, key)
-    if meter is not None:
-        meter.reset()
-
-
 def reset_meters(name: str) -> None:
     """Reset Meter instances aggregated under a given *name*."""
     meters = get_meters(name)
     if meters is not None:
         meters.reset()
+
+
+def get_smoothed_values(name: str) -> Dict[str, float]:
+    """Get smoothed values aggregated under a given *name*.
+
+    Raises:
+        KeyError: if no metrics have been logged under *name*.
+    """
+    return _aggregators[name].get_smoothed_values()
+
+
+def get_smoothed_value(name: str, key: str) -> float:
+    """Get a single smoothed value.
+
+    Raises:
+        KeyError: if no metrics have been logged under *name* and *key*.
+    """
+    return _aggregators[name].get_smoothed_value(key)
 
 
 def get_meter(name: str, key: str) -> Meter:
@@ -278,22 +268,11 @@ def get_meters(name: str) -> MetersDict:
     return _aggregators.get(name, None)
 
 
-def get_smoothed_value(name: str, key: str) -> float:
-    """Get a single smoothed value.
-
-    Raises:
-        KeyError: if no metrics have been logged under *name* and *key*.
-    """
-    return _aggregators[name].get_smoothed_value(key)
-
-
-def get_smoothed_values(name: str) -> Dict[str, float]:
-    """Get smoothed values aggregated under a given *name*.
-
-    Raises:
-        KeyError: if no metrics have been logged under *name*.
-    """
-    return _aggregators[name].get_smoothed_values()
+def reset_meter(name: str, key: str) -> None:
+    """Reset Meter instance aggregated under a given *name* and *key*."""
+    meter = get_meter(name, key)
+    if meter is not None:
+        meter.reset()
 
 
 def state_dict():
@@ -304,6 +283,22 @@ def load_state_dict(state_dict):
     for name, agg_state in state_dict.items():
         _aggregators[name] = MetersDict()
         _aggregators[name].load_state_dict(agg_state)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def xla_metrics_report():

@@ -14,7 +14,10 @@ from omegaconf import DictConfig
 REGISTRIES = {}
 
 
-def setup_registry(registry_name: str, base_class=None, default=None, required=False):
+def setup_registry(registry_name: str,
+                   base_class=None,
+                   default=None,
+                   required=False):
     assert registry_name.startswith("--")
     registry_name = registry_name[2:].replace("-", "_")
 
@@ -31,7 +34,9 @@ def setup_registry(registry_name: str, base_class=None, default=None, required=F
         "dataclass_registry": DATACLASS_REGISTRY,
     }
 
-    def build_x(cfg: Union[DictConfig, str, Namespace], *extra_args, **extra_kwargs):
+    def build_x(cfg: Union[DictConfig, str, Namespace],
+                *extra_args,
+                **extra_kwargs):
         if isinstance(cfg, DictConfig):
             choice = cfg._name
 
@@ -60,7 +65,7 @@ def setup_registry(registry_name: str, base_class=None, default=None, required=F
 
         return builder(cfg, *extra_args, **extra_kwargs)
 
-    def register_x(name, dataclass=None):
+    def register_x(name, dataclass=None):  # register name and its dataclass.
         def register_x_cls(cls):
             if name in REGISTRY:
                 raise ValueError(

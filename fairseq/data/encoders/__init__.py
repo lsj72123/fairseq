@@ -9,18 +9,15 @@ import os
 
 from fairseq import registry
 
-
 build_tokenizer, register_tokenizer, TOKENIZER_REGISTRY, _ = registry.setup_registry(
     "--tokenizer",
     default=None,
 )
 
-
 build_bpe, register_bpe, BPE_REGISTRY, _ = registry.setup_registry(
     "--bpe",
     default=None,
 )
-
 
 # automatically import any Python files in the encoders/ directory
 for file in sorted(os.listdir(os.path.dirname(__file__))):

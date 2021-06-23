@@ -13,12 +13,6 @@ from torch.nn.modules.loss import _Loss
 
 
 class FairseqCriterion(_Loss):
-    def __init__(self, task):
-        super().__init__()
-        self.task = task
-        if hasattr(task, "target_dictionary"):
-            tgt_dict = task.target_dictionary
-            self.padding_idx = tgt_dict.pad() if tgt_dict is not None else -100
 
     @classmethod
     def add_args(cls, parser):
@@ -27,6 +21,23 @@ class FairseqCriterion(_Loss):
         if dc is not None:
             gen_parser_from_dataclass(parser, dc())
 
+    def __init__(self, task):
+        super().__init__()
+        self.task = task
+        if hasattr(task, "target_dictionary"):
+            tgt_dict = task.target_dictionary
+            self.padding_idx = tgt_dict.pad() if tgt_dict is not None else -100
+
+    def forward(self, model, sample, reduce=True):
+        """Compute the loss for the given sample.
+
+        Returns a tuple with three elements:
+        1) the loss
+        2) the sample size, which is used as the denominator for the gradient
+        3) logging outputs to display while training
+        """
+        raise NotImplementedError
+
     @classmethod
     def build_criterion(cls, cfg: FairseqDataclass, task):
         """Construct a criterion from command-line args."""
@@ -34,9 +45,9 @@ class FairseqCriterion(_Loss):
         init_args = {}
         for p in inspect.signature(cls).parameters.values():
             if (
-                p.kind == p.POSITIONAL_ONLY
-                or p.kind == p.VAR_POSITIONAL
-                or p.kind == p.VAR_KEYWORD
+                    p.kind == p.POSITIONAL_ONLY
+                    or p.kind == p.VAR_POSITIONAL
+                    or p.kind == p.VAR_KEYWORD
             ):
                 # we haven't implemented inference for these argument types,
                 # but PRs welcome :)
@@ -59,27 +70,6 @@ class FairseqCriterion(_Loss):
                 )
         return cls(**init_args)
 
-    def forward(self, model, sample, reduce=True):
-        """Compute the loss for the given sample.
-
-        Returns a tuple with three elements:
-        1) the loss
-        2) the sample size, which is used as the denominator for the gradient
-        3) logging outputs to display while training
-        """
-        raise NotImplementedError
-
-    @staticmethod
-    def aggregate_logging_outputs(
-        logging_outputs: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        """Aggregate logging outputs from data parallel training."""
-        utils.deprecation_warning(
-            "The aggregate_logging_outputs API is deprecated. "
-            "Please use the reduce_metrics API instead."
-        )
-        raise NotImplementedError
-
     @classmethod
     def reduce_metrics(cls, logging_outputs: List[Dict[str, Any]]) -> None:
         """Aggregate logging outputs from data parallel training."""
@@ -92,6 +82,17 @@ class FairseqCriterion(_Loss):
             if k in {"nsentences", "ntokens", "sample_size"}:
                 continue
             metrics.log_scalar(k, v)
+
+    @staticmethod
+    def aggregate_logging_outputs(
+            logging_outputs: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Aggregate logging outputs from data parallel training."""
+        utils.deprecation_warning(
+            "The aggregate_logging_outputs API is deprecated. "
+            "Please use the reduce_metrics API instead."
+        )
+        raise NotImplementedError
 
     @staticmethod
     def logging_outputs_can_be_summed() -> bool:

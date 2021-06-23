@@ -38,10 +38,6 @@ def check_type(module, expected_type):
 class BaseFairseqModel(nn.Module):
     """Base class for fairseq models."""
 
-    def __init__(self):
-        super().__init__()
-        self._is_generation_fast = False
-
     @classmethod
     def add_args(cls, parser):
         """Add model-specific arguments to the parser."""
@@ -55,9 +51,9 @@ class BaseFairseqModel(nn.Module):
         """Build a new model instance."""
         raise NotImplementedError("Model must implement the build_model method")
 
-    def get_targets(self, sample, net_output):
-        """Get targets from either the sample or the net's output."""
-        return sample["target"]
+    def __init__(self):
+        super().__init__()
+        self._is_generation_fast = False
 
     def get_normalized_probs(
         self,
@@ -73,10 +69,10 @@ class BaseFairseqModel(nn.Module):
     # Current workaround is to add a helper function with different name and
     # call the helper function from scriptable Subclass.
     def get_normalized_probs_scriptable(
-        self,
-        net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
-        log_probs: bool,
-        sample: Optional[Dict[str, Tensor]] = None,
+            self,
+            net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
+            log_probs: bool,
+            sample: Optional[Dict[str, Tensor]] = None,
     ):
         """Scriptable helper function for get_normalized_probs in ~BaseFairseqModel"""
         if hasattr(self, "decoder"):
@@ -91,6 +87,10 @@ class BaseFairseqModel(nn.Module):
                 return F.softmax(logits, dim=-1)
         raise NotImplementedError
 
+    def get_targets(self, sample, net_output):
+        """Get targets from either the sample or the net's output."""
+        return sample["target"]
+
     def extract_features(self, *args, **kwargs):
         """Similar to *forward* but only return features."""
         return self(*args, **kwargs)
@@ -98,6 +98,14 @@ class BaseFairseqModel(nn.Module):
     def max_positions(self):
         """Maximum length supported by the model."""
         return None
+
+
+
+
+
+
+
+
 
     def load_state_dict(
         self,
@@ -114,7 +122,7 @@ class BaseFairseqModel(nn.Module):
         """
 
         if model_cfg is None and args is not None:
-            logger.warn("using 'args' is deprecated, please update your code to use dataclass config")
+            logger.warning("using 'args' is deprecated, please update your code to use dataclass config")
             model_cfg = convert_namespace_to_omegaconf(args).model
 
         self.upgrade_state_dict(state_dict)
@@ -159,13 +167,12 @@ class BaseFairseqModel(nn.Module):
 
     def prepare_for_inference_(self, cfg: DictConfig):
         """Prepare model for inference."""
-        kwargs = {}
-        kwargs["beamable_mm_beam_size"] = (
+        kwargs = {"beamable_mm_beam_size": (
             None
             if getattr(cfg.generation, "no_beamable_mm", False)
             else getattr(cfg.generation, "beam", 5)
-        )
-        kwargs["need_attn"] = getattr(cfg.generation, "print_alignment", False)
+        ), "need_attn": getattr(cfg.generation, "print_alignment", False)}
+
         if getattr(cfg.generation, "retain_dropout", False):
             kwargs["retain_dropout"] = cfg.generation.retain_dropout
             kwargs["retain_dropout_modules"] = cfg.generation.retain_dropout_modules
@@ -293,6 +300,10 @@ class FairseqEncoderDecoderModel(BaseFairseqModel):
         check_type(self.encoder, FairseqEncoder)
         check_type(self.decoder, FairseqDecoder)
 
+    def max_decoder_positions(self):
+        """Maximum length supported by the decoder."""
+        return self.decoder.max_positions()
+
     def forward(self, src_tokens, src_lengths, prev_output_tokens, **kwargs):
         """
         Run the forward pass for an encoder-decoder model.
@@ -346,11 +357,7 @@ class FairseqEncoderDecoderModel(BaseFairseqModel):
 
     def max_positions(self):
         """Maximum length supported by the model."""
-        return (self.encoder.max_positions(), self.decoder.max_positions())
-
-    def max_decoder_positions(self):
-        """Maximum length supported by the decoder."""
-        return self.decoder.max_positions()
+        return self.encoder.max_positions(), self.decoder.max_positions()
 
 
 class FairseqModel(FairseqEncoderDecoderModel):
@@ -361,6 +368,51 @@ class FairseqModel(FairseqEncoderDecoderModel):
             "or BaseFairseqModel instead",
             stacklevel=4,
         )
+
+
+class FairseqEncoderModel(BaseFairseqModel):
+    """Base class for encoder-only models.
+
+    Args:
+        encoder (FairseqEncoder): the encoder
+    """
+
+    def __init__(self, encoder):
+        super().__init__()
+        self.encoder = encoder
+        check_type(self.encoder, FairseqEncoder)
+
+    def forward(self, src_tokens, src_lengths, **kwargs):
+        """
+        Run the forward pass for a encoder-only model.
+
+        Feeds a batch of tokens through the encoder to generate features.
+
+        Args:
+            src_tokens (LongTensor): input tokens of shape `(batch, src_len)`
+            src_lengths (LongTensor): source sentence lengths of shape `(batch)`
+
+        Returns:
+            the encoder's output, typically of shape `(batch, src_len, features)`
+        """
+        return self.encoder(src_tokens, src_lengths, **kwargs)
+
+    def get_normalized_probs(self, net_output, log_probs, sample=None):
+        """Get normalized probabilities (or log probs) from a net's output."""
+        encoder_out = net_output["encoder_out"]
+        if torch.is_tensor(encoder_out):
+            logits = encoder_out.float()
+            if log_probs:
+                return F.log_softmax(logits, dim=-1)
+            else:
+                return F.softmax(logits, dim=-1)
+        raise NotImplementedError
+
+    def max_positions(self):
+        """Maximum length supported by the model."""
+        return self.encoder.max_positions()
+
+
 
 
 class FairseqMultiModel(BaseFairseqModel):
@@ -526,44 +578,4 @@ class FairseqLanguageModel(BaseFairseqModel):
         return {"future"}
 
 
-class FairseqEncoderModel(BaseFairseqModel):
-    """Base class for encoder-only models.
 
-    Args:
-        encoder (FairseqEncoder): the encoder
-    """
-
-    def __init__(self, encoder):
-        super().__init__()
-        self.encoder = encoder
-        check_type(self.encoder, FairseqEncoder)
-
-    def forward(self, src_tokens, src_lengths, **kwargs):
-        """
-        Run the forward pass for a encoder-only model.
-
-        Feeds a batch of tokens through the encoder to generate features.
-
-        Args:
-            src_tokens (LongTensor): input tokens of shape `(batch, src_len)`
-            src_lengths (LongTensor): source sentence lengths of shape `(batch)`
-
-        Returns:
-            the encoder's output, typically of shape `(batch, src_len, features)`
-        """
-        return self.encoder(src_tokens, src_lengths, **kwargs)
-
-    def get_normalized_probs(self, net_output, log_probs, sample=None):
-        """Get normalized probabilities (or log probs) from a net's output."""
-        encoder_out = net_output["encoder_out"]
-        if torch.is_tensor(encoder_out):
-            logits = encoder_out.float()
-            if log_probs:
-                return F.log_softmax(logits, dim=-1)
-            else:
-                return F.softmax(logits, dim=-1)
-        raise NotImplementedError
-
-    def max_positions(self):
-        """Maximum length supported by the model."""
-        return self.encoder.max_positions()

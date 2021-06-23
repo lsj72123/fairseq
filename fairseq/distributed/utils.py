@@ -20,13 +20,12 @@ from typing import Any, Dict, List, Mapping, Optional
 import torch
 import torch.distributed as dist
 from fairseq.dataclass.configs import DistributedTrainingConfig, FairseqConfig
-from omegaconf import open_dict
+from omegaconf import open_dict, DictConfig
 
 try:
     import torch_xla.core.xla_model as xm
 except ImportError:
     xm = None
-
 
 # Flag to indicate if we're using Megatron
 # NOTE: this is a temporary hack until we move away from Megatron's model parallel init
@@ -35,12 +34,47 @@ _USE_MEGATRON = False
 # Whether to use XLA ops (e.g., on TPUs) instead of CUDA ops.
 _USE_XLA = False
 
-
 logger = logging.getLogger(__name__)
 
 
-def is_master(cfg: DistributedTrainingConfig):
-    return cfg.distributed_rank == 0
+def call_main(cfg: DictConfig, main, **kwargs):
+    if cfg.distributed_training.distributed_init_method is None:
+        infer_init_method(cfg.distributed_training)
+
+    if cfg.distributed_training.distributed_init_method is not None:    # todo
+        # distributed training
+        if not cfg.distributed_training.distributed_no_spawn:
+            start_rank = cfg.distributed_training.distributed_rank
+            cfg.distributed_training.distributed_rank = None  # assign automatically
+            kwargs["start_rank"] = start_rank
+            torch.multiprocessing.spawn(
+                fn=distributed_main,
+                args=(main, cfg, kwargs),
+                nprocs=min(
+                    torch.cuda.device_count(),
+                    cfg.distributed_training.distributed_world_size,
+                ),
+                join=True,
+            )
+        else:
+            distributed_main(cfg.distributed_training.device_id, main, cfg, kwargs)
+
+    elif cfg.common.tpu and cfg.distributed_training.distributed_world_size > 1:    # todo
+        import torch_xla.distributed.xla_multiprocessing as xmp
+
+        torch.multiprocessing.set_sharing_strategy("file_system")
+        xmp.spawn(
+            fn=distributed_main,
+            args=(main, cfg, kwargs),
+            # tpu-comment:
+            #   8 devices in one TPU VM, is the max processes to be spawned.
+            #   The rest is driven by xm.distributed.xla_dist
+            nprocs=min(cfg.distributed_training.distributed_world_size, 8),
+        )
+
+    else:
+        # single GPU main
+        main(cfg, **kwargs)
 
 
 def infer_init_method(cfg: DistributedTrainingConfig, force_distributed=False):
@@ -52,8 +86,8 @@ def infer_init_method(cfg: DistributedTrainingConfig, force_distributed=False):
         num_pipeline_devices, num_pipelines_per_node = _pipeline_parallel_pre_init(cfg)
 
     if all(
-        key in os.environ
-        for key in ["MASTER_ADDR", "MASTER_PORT", "WORLD_SIZE", "RANK"]
+            key in os.environ
+            for key in ["MASTER_ADDR", "MASTER_PORT", "WORLD_SIZE", "RANK"]
     ):
         # support torch.distributed.launch
         _infer_torch_distributed_launch_init(cfg)
@@ -71,6 +105,75 @@ def infer_init_method(cfg: DistributedTrainingConfig, force_distributed=False):
             cfg.distributed_num_procs = min(
                 torch.cuda.device_count(), cfg.distributed_world_size
             )
+
+
+def is_master(cfg: DistributedTrainingConfig):
+    return cfg.distributed_rank == 0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def _pipeline_parallel_pre_init(cfg: DistributedTrainingConfig):
+    from fairseq import utils
+
+    balance_exists = (
+            cfg.pipeline_balance is not None
+            or cfg.pipeline_encoder_balance is not None
+            or cfg.pipeline_decoder_balance is not None
+    )
+    devices_exist = (
+            cfg.pipeline_devices is not None
+            or cfg.pipeline_encoder_devices is not None
+            or cfg.pipeline_decoder_devices is not None
+    )
+    if not balance_exists:
+        raise ValueError(
+            "--pipeline-balance is currently required for pipeline model parallelism"
+        )
+    if not devices_exist:
+        raise ValueError(
+            "--pipeline-devices is currently required for pipeline model parallelism"
+        )
+
+    cfg.pipeline_balance = utils.eval_str_list(cfg.pipeline_balance, type=int)
+    if cfg.pipeline_devices is not None:
+        cfg.pipeline_devices = utils.eval_str_list(cfg.pipeline_devices, type=int)
+        num_pipeline_devices = len(set(cfg.pipeline_devices))
+    else:
+        cfg.pipeline_encoder_devices = utils.eval_str_list(
+            cfg.pipeline_encoder_devices, type=int
+        )
+        cfg.pipeline_decoder_devices = utils.eval_str_list(
+            cfg.pipeline_decoder_devices, type=int
+        )
+        num_pipeline_devices = len(
+            set(cfg.pipeline_encoder_devices + cfg.pipeline_decoder_devices)
+        )
+    gpus_per_node = torch.cuda.device_count()
+    assert (
+            gpus_per_node >= num_pipeline_devices
+            and gpus_per_node % num_pipeline_devices == 0
+    ), (
+        "the number of unique device IDs in --pipeline-devices must evenly divide "
+        "the number of GPUs per node (multi-node pipelining is not yet supported)"
+    )
+    num_pipelines_per_node = gpus_per_node // num_pipeline_devices
+    return num_pipeline_devices, num_pipelines_per_node
 
 
 def _infer_torch_distributed_launch_init(cfg: DistributedTrainingConfig):
@@ -137,64 +240,8 @@ def _infer_slurm_init(cfg: DistributedTrainingConfig, num_pipelines_per_node):
             pass
 
 
-def _infer_single_node_init(cfg: DistributedTrainingConfig):
-    assert (
-        cfg.distributed_world_size <= torch.cuda.device_count()
-    ), f"world size is {cfg.distributed_world_size} but have {torch.cuda.device_count()} available devices"
-    port = random.randint(10000, 20000)
-    cfg.distributed_init_method = "tcp://localhost:{port}".format(port=port)
-
-
-def _pipeline_parallel_pre_init(cfg: DistributedTrainingConfig):
-    from fairseq import utils
-
-    balance_exists = (
-        cfg.pipeline_balance is not None
-        or cfg.pipeline_encoder_balance is not None
-        or cfg.pipeline_decoder_balance is not None
-    )
-    devices_exist = (
-        cfg.pipeline_devices is not None
-        or cfg.pipeline_encoder_devices is not None
-        or cfg.pipeline_decoder_devices is not None
-    )
-    if not balance_exists:
-        raise ValueError(
-            "--pipeline-balance is currently required for pipeline model parallelism"
-        )
-    if not devices_exist:
-        raise ValueError(
-            "--pipeline-devices is currently required for pipeline model parallelism"
-        )
-
-    cfg.pipeline_balance = utils.eval_str_list(cfg.pipeline_balance, type=int)
-    if cfg.pipeline_devices is not None:
-        cfg.pipeline_devices = utils.eval_str_list(cfg.pipeline_devices, type=int)
-        num_pipeline_devices = len(set(cfg.pipeline_devices))
-    else:
-        cfg.pipeline_encoder_devices = utils.eval_str_list(
-            cfg.pipeline_encoder_devices, type=int
-        )
-        cfg.pipeline_decoder_devices = utils.eval_str_list(
-            cfg.pipeline_decoder_devices, type=int
-        )
-        num_pipeline_devices = len(
-            set(cfg.pipeline_encoder_devices + cfg.pipeline_decoder_devices)
-        )
-    gpus_per_node = torch.cuda.device_count()
-    assert (
-        gpus_per_node >= num_pipeline_devices
-        and gpus_per_node % num_pipeline_devices == 0
-    ), (
-        "the number of unique device IDs in --pipeline-devices must evenly divide "
-        "the number of GPUs per node (multi-node pipelining is not yet supported)"
-    )
-    num_pipelines_per_node = gpus_per_node // num_pipeline_devices
-    return num_pipeline_devices, num_pipelines_per_node
-
-
 def _pipeline_parallel_post_init(
-    cfg: DistributedTrainingConfig, num_pipeline_devices, num_pipelines_per_node
+        cfg: DistributedTrainingConfig, num_pipeline_devices, num_pipelines_per_node
 ):
     if not cfg.distributed_no_spawn:
         # When distributed_no_spawn is False, we expect distributed_rank and
@@ -202,7 +249,7 @@ def _pipeline_parallel_post_init(
         # we need to correct them to be based on the number of pipelines.
         assert cfg.distributed_world_size % num_pipeline_devices == 0
         cfg.distributed_world_size = (
-            cfg.distributed_world_size // num_pipeline_devices
+                cfg.distributed_world_size // num_pipeline_devices
         )
         # In the case of 4-way MP on nodes with 8 GPUs, we want
         # distributed_rank to be the starting GPU index for each pipeline
@@ -236,6 +283,17 @@ def _pipeline_parallel_post_init(
                 cfg.pipeline_devices, cfg.distributed_rank
             )
         )
+
+
+def _infer_single_node_init(cfg: DistributedTrainingConfig):
+    assert (
+            cfg.distributed_world_size <= torch.cuda.device_count()
+    ), f"world size is {cfg.distributed_world_size} but have {torch.cuda.device_count()} available devices"
+    port = random.randint(10000, 20000)
+    cfg.distributed_init_method = "tcp://localhost:{port}".format(port=port)
+
+
+
 
 
 def distributed_init(cfg: FairseqConfig):
@@ -306,7 +364,7 @@ def distributed_init(cfg: FairseqConfig):
         model_part_number = get_model_parallel_rank()
         cfg.checkpoint.checkpoint_suffix += "-model_part-{0}".format(model_part_number)
 
-    if hasattr(cfg,  "model") and getattr(cfg.model, "base_layers", 0) > 0:
+    if hasattr(cfg, "model") and getattr(cfg.model, "base_layers", 0) > 0:
         cfg.checkpoint.checkpoint_suffix = f"-rank-{cfg.distributed_training.distributed_rank}"
 
     return cfg.distributed_training.distributed_rank
@@ -331,42 +389,60 @@ def distributed_main(i, main, cfg: FairseqConfig, kwargs):
         torch.distributed.barrier(get_global_group())
 
 
-def call_main(cfg: FairseqConfig, main, **kwargs):
-    if cfg.distributed_training.distributed_init_method is None:
-        infer_init_method(cfg.distributed_training)
-
-    if cfg.distributed_training.distributed_init_method is not None:
-        # distributed training
-        if not cfg.distributed_training.distributed_no_spawn:
-            start_rank = cfg.distributed_training.distributed_rank
-            cfg.distributed_training.distributed_rank = None  # assign automatically
-            kwargs["start_rank"] = start_rank
-            torch.multiprocessing.spawn(
-                fn=distributed_main,
-                args=(main, cfg, kwargs),
-                nprocs=min(
-                    torch.cuda.device_count(),
-                    cfg.distributed_training.distributed_world_size,
-                ),
-                join=True,
-            )
-        else:
-            distributed_main(cfg.distributed_training.device_id, main, cfg, kwargs)
-    elif cfg.common.tpu and cfg.distributed_training.distributed_world_size > 1:
-        import torch_xla.distributed.xla_multiprocessing as xmp
-
-        torch.multiprocessing.set_sharing_strategy("file_system")
-        xmp.spawn(
-            fn=distributed_main,
-            args=(main, cfg, kwargs),
-            # tpu-comment:
-            #   8 devices in one TPU VM, is the max processes to be spawned.
-            #   The rest is driven by xm.distributed.xla_dist
-            nprocs=min(cfg.distributed_training.distributed_world_size, 8),
-        )
+def all_reduce(tensor, group, op="sum"):
+    if use_xla():
+        assert isinstance(group, tuple) and group[0] == "tpu"
+        tensor = [tensor]  # wrap in a list to make xm.all_reduce in-place
+        return xm.all_reduce(op, tensor, groups=group[1])[0]
     else:
-        # single GPU main
-        main(cfg, **kwargs)
+        if op == "sum":
+            op = dist.ReduceOp.SUM
+        elif op == "max":
+            op = dist.ReduceOp.MAX
+        else:
+            raise NotImplementedError
+        dist.all_reduce(tensor, op=op, group=group)
+        return tensor
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def use_xla():
@@ -488,20 +564,7 @@ def get_model_parallel_world_size():
     return get_world_size(get_model_parallel_group())
 
 
-def all_reduce(tensor, group, op="sum"):
-    if use_xla():
-        assert isinstance(group, tuple) and group[0] == "tpu"
-        tensor = [tensor]  # wrap in a list to make xm.all_reduce in-place
-        return xm.all_reduce(op, tensor, groups=group[1])[0]
-    else:
-        if op == "sum":
-            op = dist.ReduceOp.SUM
-        elif op == "max":
-            op = dist.ReduceOp.MAX
-        else:
-            raise NotImplementedError
-        dist.all_reduce(tensor, op=op, group=group)
-        return tensor
+
 
 
 def broadcast(tensor, src, group):
@@ -579,8 +642,8 @@ def all_gather_list(data, group=None, max_size=16384):
 
     buffer_size = max_size * world_size
     if (
-        not hasattr(all_gather_list, "_buffer")
-        or all_gather_list._buffer.numel() < buffer_size
+            not hasattr(all_gather_list, "_buffer")
+            or all_gather_list._buffer.numel() < buffer_size
     ):
         all_gather_list._buffer = torch.cuda.ByteTensor(buffer_size)
         all_gather_list._cpu_buffer = torch.ByteTensor(max_size).pin_memory()
@@ -601,7 +664,7 @@ def all_gather_list(data, group=None, max_size=16384):
     header = struct.pack(">I", enc_size)
     cpu_buffer[:size] = torch.ByteTensor(list(header + enc))
     start = rank * max_size
-    buffer[start : start + size].copy_(cpu_buffer[:size])
+    buffer[start: start + size].copy_(cpu_buffer[:size])
 
     all_reduce(buffer, group=group)
 
@@ -609,12 +672,12 @@ def all_gather_list(data, group=None, max_size=16384):
     try:
         result = []
         for i in range(world_size):
-            out_buffer = buffer[i * max_size : (i + 1) * max_size]
+            out_buffer = buffer[i * max_size: (i + 1) * max_size]
             (enc_size,) = struct.unpack(">I", bytes(out_buffer[:header_size].tolist()))
             if enc_size > 0:
                 result.append(
                     pickle.loads(
-                        bytes(out_buffer[header_size : header_size + enc_size].tolist())
+                        bytes(out_buffer[header_size: header_size + enc_size].tolist())
                     )
                 )
         return result
@@ -680,10 +743,10 @@ def all_reduce_dict(data: Mapping[str, Any], device, group) -> Dict[str, Any]:
 
 
 def broadcast_tensors(
-    tensors: Optional[List[torch.Tensor]],
-    src_rank: int,
-    group: object,
-    dist_device: Optional[torch.device] = None,
+        tensors: Optional[List[torch.Tensor]],
+        src_rank: int,
+        group: object,
+        dist_device: Optional[torch.device] = None,
 ) -> List[torch.Tensor]:
     """
     Broadcasts a list of tensors without other (non-src) ranks needing to know
@@ -721,10 +784,10 @@ def broadcast_tensors(
 
 
 def broadcast_object(
-    obj: Any,
-    src_rank: int,
-    group: object,
-    dist_device: Optional[torch.device] = None,
+        obj: Any,
+        src_rank: int,
+        group: object,
+        dist_device: Optional[torch.device] = None,
 ) -> Any:
     """Broadcast an arbitrary Python object to other workers."""
     if dist_device is None:
@@ -747,7 +810,7 @@ def broadcast_object(
 
 
 def _broadcast_object_slow(
-    obj: Any, src_rank: int, group: object, dist_device: torch.device,
+        obj: Any, src_rank: int, group: object, dist_device: torch.device,
 ) -> Any:
     if get_rank(group) == src_rank:
         # Emit data

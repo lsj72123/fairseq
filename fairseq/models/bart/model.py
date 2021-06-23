@@ -23,6 +23,15 @@ from .hub_interface import BARTHubInterface
 logger = logging.getLogger(__name__)
 
 
+
+
+
+
+
+
+
+
+
 @register_model("bart")
 class BARTModel(TransformerModel):
     __jit_unused_properties__ = ["supported_targets"]

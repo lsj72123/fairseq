@@ -14,7 +14,6 @@ from fairseq.criterions.fairseq_criterion import (  # noqa
 )
 from omegaconf import DictConfig
 
-
 (
     build_criterion_,
     register_criterion,

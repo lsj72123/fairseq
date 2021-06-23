@@ -26,14 +26,12 @@ from .fairseq_model import (
     FairseqMultiModel,
 )
 
-
 MODEL_REGISTRY = {}
 MODEL_DATACLASS_REGISTRY = {}
 ARCH_MODEL_REGISTRY = {}
 ARCH_MODEL_NAME_REGISTRY = {}
 ARCH_MODEL_INV_REGISTRY = {}
 ARCH_CONFIG_REGISTRY = {}
-
 
 __all__ = [
     "BaseFairseqModel",
@@ -48,52 +46,6 @@ __all__ = [
     "FairseqModel",
     "FairseqMultiModel",
 ]
-
-
-def build_model(cfg: FairseqDataclass, task):
-
-    model = None
-    model_type = getattr(cfg, "_name", None) or getattr(cfg, "arch", None)
-
-    if not model_type and len(cfg) == 1:
-        # this is hit if config object is nested in directory that is named after model type
-
-        model_type = next(iter(cfg))
-        if model_type in MODEL_DATACLASS_REGISTRY:
-            cfg = cfg[model_type]
-        else:
-            raise Exception(
-                "Could not infer model type from directory. Please add _name field to indicate model type. "
-                "Available models: "
-                + str(MODEL_DATACLASS_REGISTRY.keys())
-                + " Requested model type: "
-                + model_type
-            )
-
-    if model_type in ARCH_MODEL_REGISTRY:
-        # case 1: legacy models
-        model = ARCH_MODEL_REGISTRY[model_type]
-    elif model_type in MODEL_DATACLASS_REGISTRY:
-        # case 2: config-driven models
-        model = MODEL_REGISTRY[model_type]
-
-    if model_type in MODEL_DATACLASS_REGISTRY:
-        # set defaults from dataclass. note that arch name and model name can be the same
-        dc = MODEL_DATACLASS_REGISTRY[model_type]
-        if isinstance(cfg, argparse.Namespace):
-            cfg = populate_dataclass(dc(), cfg)
-        else:
-            cfg = merge_with_parent(dc(), cfg)
-
-    assert model is not None, (
-        f"Could not infer model type from {cfg}. "
-        f"Available models: "
-        + str(MODEL_DATACLASS_REGISTRY.keys())
-        + " Requested model type: "
-        + model_type
-    )
-
-    return model.build_model(cfg, task)
 
 
 def register_model(name, dataclass=None):
@@ -195,20 +147,75 @@ def register_model_architecture(model_name, arch_name):
     return register_model_arch_fn
 
 
+def build_model(cfg: FairseqDataclass, task):
+    model = None
+    model_type = getattr(cfg, "_name", None) or getattr(cfg, "arch", None)
+
+    if not model_type and len(cfg) == 1:
+        # this is hit if config object is nested in directory that is named after model type
+
+        model_type = next(iter(cfg))
+        if model_type in MODEL_DATACLASS_REGISTRY:
+            cfg = cfg[model_type]
+        else:
+            raise Exception(
+                "Could not infer model type from directory. Please add _name field to indicate model type. "
+                "Available models: "
+                + str(MODEL_DATACLASS_REGISTRY.keys())
+                + " Requested model type: "
+                + model_type
+            )
+
+    if model_type in ARCH_MODEL_REGISTRY:
+        # case 1: legacy models
+        model = ARCH_MODEL_REGISTRY[model_type]
+    elif model_type in MODEL_DATACLASS_REGISTRY:
+        # case 2: config-driven models
+        model = MODEL_REGISTRY[model_type]
+
+    if model_type in MODEL_DATACLASS_REGISTRY:
+        # set defaults from dataclass. note that arch name and model name can be the same
+        dc = MODEL_DATACLASS_REGISTRY[model_type]
+        if isinstance(cfg, argparse.Namespace):
+            cfg = populate_dataclass(dc(), cfg)
+        else:
+            cfg = merge_with_parent(dc(), cfg)
+
+    assert model is not None, (
+            f"Could not infer model type from {cfg}. "
+            f"Available models: "
+            + str(MODEL_DATACLASS_REGISTRY.keys())
+            + " Requested model type: "
+            + model_type
+    )
+
+    return model.build_model(cfg, task)
+
+
+
+
+
+
+
+
+
+
+
+
 def import_models(models_dir, namespace):
     for file in os.listdir(models_dir):
         path = os.path.join(models_dir, file)
         if (
-            not file.startswith("_")
-            and not file.startswith(".")
-            and (file.endswith(".py") or os.path.isdir(path))
+                not file.startswith("_")  # exclude __init__
+                and not file.startswith(".")
+                and (file.endswith(".py") or os.path.isdir(path))
         ):
             model_name = file[: file.find(".py")] if file.endswith(".py") else file
-            importlib.import_module(namespace + "." + model_name)
+            importlib.import_module(namespace + "." + model_name)  # here import model will register model or arch.
 
             # extra `model_parser` for sphinx
             if model_name in MODEL_REGISTRY:
-                parser = argparse.ArgumentParser(add_help=False)
+                parser = argparse.ArgumentParser(add_help=False)  # a new parse
                 group_archs = parser.add_argument_group("Named architectures")
                 group_archs.add_argument(
                     "--arch", choices=ARCH_MODEL_INV_REGISTRY[model_name]

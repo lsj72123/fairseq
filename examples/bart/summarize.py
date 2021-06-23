@@ -90,7 +90,7 @@ def main():
         )
     bart = bart.eval()
     if torch.cuda.is_available():
-        bart = bart.cuda().half()
+        bart = bart.cuda(,.half()
     generate(
         bart, args.src, bsz=args.bsz, n_obs=args.n, outfile=args.out, **eval_kwargs
     )

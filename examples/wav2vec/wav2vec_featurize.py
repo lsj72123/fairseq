@@ -85,7 +85,7 @@ class Prediction:
         self.model = PretrainedWav2VecModel(fname).cuda(gpu)
 
     def __call__(self, x):
-        x = torch.from_numpy(x).float().cuda(self.gpu)
+        x = torch.from_numpy(x).float().cuda()
         with torch.no_grad():
             z, c = self.model(x.unsqueeze(0))
 

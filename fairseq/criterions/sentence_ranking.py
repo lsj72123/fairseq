@@ -45,8 +45,8 @@ class SentenceRankingCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         assert (
-            hasattr(model, "classification_heads")
-            and self.ranking_head_name in model.classification_heads
+                hasattr(model, "classification_heads")
+                and self.ranking_head_name in model.classification_heads
         ), "model must provide sentence ranking head for --criterion=sentence_ranking"
 
         scores = []

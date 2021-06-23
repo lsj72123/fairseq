@@ -271,6 +271,31 @@ class GeneratorHubInterface(nn.Module):
         return batch_iterator
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class BPEHubInterface(object):
     """PyTorch Hub interface for Byte-Pair Encoding (BPE)."""
 

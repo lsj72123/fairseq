@@ -12,6 +12,18 @@ from . import FairseqDataset
 
 
 class ConcatDataset(FairseqDataset):
+
+    def __init__(self, datasets, sample_ratios=1):
+        super(ConcatDataset, self).__init__()
+        assert len(datasets) > 0, "datasets should not be an empty iterable"
+        self.datasets = list(datasets)
+        if isinstance(sample_ratios, int):
+            sample_ratios = [sample_ratios] * len(self.datasets)
+        self.sample_ratios = sample_ratios
+
+        self.cumulative_sizes = self.cumsum(self.datasets, sample_ratios)   # todo
+        self.real_sizes = [len(d) for d in self.datasets]
+
     @staticmethod
     def cumsum(sequence, sample_ratios):
         r, s = [], 0
@@ -21,15 +33,14 @@ class ConcatDataset(FairseqDataset):
             s += curr_len
         return r
 
-    def __init__(self, datasets, sample_ratios=1):
-        super(ConcatDataset, self).__init__()
-        assert len(datasets) > 0, "datasets should not be an empty iterable"
-        self.datasets = list(datasets)
-        if isinstance(sample_ratios, int):
-            sample_ratios = [sample_ratios] * len(self.datasets)
-        self.sample_ratios = sample_ratios
-        self.cumulative_sizes = self.cumsum(self.datasets, sample_ratios)
-        self.real_sizes = [len(d) for d in self.datasets]
+
+
+
+
+
+
+
+
 
     def __len__(self):
         return self.cumulative_sizes[-1]

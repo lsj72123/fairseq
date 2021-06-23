@@ -35,8 +35,8 @@ class SentencePredictionCriterion(FairseqCriterion):
         3) logging outputs to display while training
         """
         assert (
-            hasattr(model, "classification_heads")
-            and self.classification_head_name in model.classification_heads
+                hasattr(model, "classification_heads")
+                and self.classification_head_name in model.classification_heads
         ), "model must provide sentence classification head for --criterion=sentence_prediction"
 
         logits, _ = model(

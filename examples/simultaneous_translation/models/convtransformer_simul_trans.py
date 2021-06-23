@@ -25,6 +25,7 @@ from torch import nn, Tensor
 from typing import Dict, List
 from fairseq.models.speech_to_text.modules.emformer import NoSegAugmentedMemoryTransformerEncoderLayer
 
+
 @register_model("convtransformer_simul_trans")
 class SimulConvTransformerModel(ConvTransformerModel):
     """
@@ -129,7 +130,8 @@ class ConvTransformerEmformerEncoder(ConvTransformerEncoder):
         self.conv_transformer_encoder = ConvTransformerEncoder(args)
 
     def forward(self, src_tokens, src_lengths):
-        encoder_out: Dict[str, List[Tensor]] = self.conv_transformer_encoder(src_tokens, src_lengths.to(src_tokens.device))
+        encoder_out: Dict[str, List[Tensor]] = self.conv_transformer_encoder(src_tokens,
+                                                                             src_lengths.to(src_tokens.device))
         output = encoder_out["encoder_out"][0]
         encoder_padding_masks = encoder_out["encoder_padding_mask"]
 

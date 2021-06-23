@@ -76,8 +76,8 @@ class LabelSmoothedCrossEntropyCriterionWithAlignment(
             # Alignment loss computation. align (shape [:, 2]) contains the src-tgt index pairs corresponding to
             # the alignments. align_weights (shape [:]) contains the 1 / frequency of a tgt index for normalizing.
             loss = -(
-                (attn[align[:, 1][:, None], align[:, 0][:, None]]).log()
-                * align_weights[:, None]
+                    (attn[align[:, 1][:, None], align[:, 0][:, None]]).log()
+                    * align_weights[:, None]
             ).sum()
         else:
             return None

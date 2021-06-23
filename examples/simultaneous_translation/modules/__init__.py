@@ -8,7 +8,6 @@ import os
 
 from fairseq import registry
 
-
 (
     build_monotonic_attention,
     register_monotonic_attention,

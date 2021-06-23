@@ -8,7 +8,6 @@ import logging
 from fairseq.modules.quantization import pq, quantization_options, scalar
 from omegaconf import DictConfig
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -18,6 +17,28 @@ def quantize_model_scalar(model, model_cfg: DictConfig):
         # quantize_model edits the model in place
         scalar.quantize_model_(model, p=quant_noise_scalar, bits=8, update_step=1000)
     return model
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 class Quantizer(object):
@@ -61,7 +82,7 @@ class Quantizer(object):
         else:
             self.update_schedule = None
         assert (self.epoch_schedule is not None) ^ (
-            self.update_schedule is not None
+                self.update_schedule is not None
         ), "for iterative PQ, cannot specify both --max-update and --max-epoch"
 
         # 0 is a special value for quantization step, which will force
@@ -104,23 +125,23 @@ class Quantizer(object):
     def begin_epoch(self, epoch):
         """Called at the beginning of each epoch (epochs start at 1)."""
         if (
-            (
-                self.epoch_schedule is not None
-                and epoch > 0
-                and (epoch - 1) % self.epoch_schedule == 0
-            )
-            # we always step once in the beginning, even if using
-            # update-based quantization
-            or self.quantization_step == 0
+                (
+                        self.epoch_schedule is not None
+                        and epoch > 0
+                        and (epoch - 1) % self.epoch_schedule == 0
+                )
+                # we always step once in the beginning, even if using
+                # update-based quantization
+                or self.quantization_step == 0
         ):
             self.step()
 
     def step_update(self, num_updates):
         """Called at the end of each step."""
         if (
-            self.update_schedule is not None
-            and num_updates > 0
-            and num_updates % self.update_schedule == 0
+                self.update_schedule is not None
+                and num_updates > 0
+                and num_updates % self.update_schedule == 0
         ):
             self.step()
 

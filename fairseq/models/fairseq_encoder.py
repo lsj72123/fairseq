@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-
 EncoderOut = NamedTuple(
     "EncoderOut",
     [
@@ -40,6 +39,10 @@ class FairseqEncoder(nn.Module):
         """
         raise NotImplementedError
 
+    def max_positions(self):
+        """Maximum input length supported by the encoder."""
+        return 1e6  # an arbitrary large number
+
     def forward_torchscript(self, net_input: Dict[str, Tensor]):
         """A TorchScript-compatible version of forward.
 
@@ -61,6 +64,10 @@ class FairseqEncoder(nn.Module):
         }
         return self.forward(**encoder_input)
 
+
+
+
+
     def reorder_encoder_out(self, encoder_out, new_order):
         """
         Reorder encoder output according to `new_order`.
@@ -74,9 +81,7 @@ class FairseqEncoder(nn.Module):
         """
         raise NotImplementedError
 
-    def max_positions(self):
-        """Maximum input length supported by the encoder."""
-        return 1e6  # an arbitrary large number
+
 
     def upgrade_state_dict_named(self, state_dict, name):
         """Upgrade old state dicts to work with newer code."""

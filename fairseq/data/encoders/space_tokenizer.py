@@ -12,7 +12,10 @@ from fairseq.dataclass import FairseqDataclass
 @register_tokenizer("space", dataclass=FairseqDataclass)
 class SpaceTokenizer(object):
     def __init__(self, *unused):
-        self.space_tok = re.compile(r"\s+")
+        self.space_tok = re.compile(r"\s+")  # at least one space char
+
+
+
 
     def encode(self, x: str) -> str:
         return self.space_tok.sub(" ", x)

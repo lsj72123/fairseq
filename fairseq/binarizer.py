@@ -23,22 +23,30 @@ def safe_readline(f):
 
 
 class Binarizer:
+
+    @staticmethod
+    def find_offsets(filename, num_chunks) -> List[int]:
+        with open(PathManager.get_local_path(filename), "r", encoding="utf-8") as f:
+            size = os.fstat(f.fileno()).st_size
+            chunk_size = size // num_chunks
+            offsets = [0 for _ in range(num_chunks + 1)]
+
+            for i in range(1, num_chunks):
+                f.seek(chunk_size * i)
+                safe_readline(f)
+                offsets[i] = f.tell()
+
+            return offsets
+
     @staticmethod
     def binarize(
-        filename,
-        dict,
-        consumer,
-        tokenize=tokenize_line,
-        append_eos=True,
-        reverse_order=False,
-        offset=0,
-        end=-1,
-        already_numberized=False,
+            filename, dict, consumer, tokenize=tokenize_line,
+            append_eos=True, reverse_order=False, offset=0, end=-1, already_numberized=False,
     ) -> Dict[str, int]:
         nseq, ntok = 0, 0
         replaced = Counter()
 
-        def replaced_consumer(word, idx):
+        def replaced_consumer(word, idx):  # contains all the OOV tokens that need to be replaced by NUK
             if idx == dict.unk_index and word != dict.unk_word:
                 replaced.update([word])
 
@@ -51,9 +59,9 @@ class Binarizer:
                 # sometimes it skips to a very large number
                 # it is unlikely that through a normal read we go from
                 # end bytes to end + 2**32 bytes (4 GB) and this makes it unlikely
-                # that the procedure breaks by the undeterministic behavior of
+                # that the procedure breaks by the Nondeterministic behavior of
                 # f.tell()
-                if end > 0 and f.tell() > end and f.tell() < end + 2 ** 32:
+                if 0 < end < f.tell() < end + 2 ** 32:
                     break
                 if already_numberized:
                     id_strings = line.strip().split()
@@ -83,9 +91,18 @@ class Binarizer:
             "replaced": replaced,
         }
 
+
+
+
+
+
+
+
+
+
     @staticmethod
     def binarize_alignments(
-        filename, alignment_parser, consumer, offset=0, end=-1
+            filename, alignment_parser, consumer, offset=0, end=-1
     ) -> Dict[str, int]:
         nseq = 0
 
@@ -93,22 +110,10 @@ class Binarizer:
             f.seek(offset)
             line = safe_readline(f)
             while line:
-                if end > 0 and f.tell() > end:
+                if 0 < end < f.tell():
                     break
                 ids = alignment_parser(line)
                 nseq += 1
                 consumer(ids)
                 line = f.readline()
         return {"nseq": nseq}
-
-    @staticmethod
-    def find_offsets(filename, num_chunks) -> List[int]:
-        with open(PathManager.get_local_path(filename), "r", encoding="utf-8") as f:
-            size = os.fstat(f.fileno()).st_size
-            chunk_size = size // num_chunks
-            offsets = [0 for _ in range(num_chunks + 1)]
-            for i in range(1, num_chunks):
-                f.seek(chunk_size * i)
-                safe_readline(f)
-                offsets[i] = f.tell()
-            return offsets

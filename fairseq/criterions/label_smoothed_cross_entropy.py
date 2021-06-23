@@ -13,23 +13,6 @@ from fairseq.dataclass import FairseqDataclass
 from omegaconf import II
 
 
-@dataclass
-class LabelSmoothedCrossEntropyCriterionConfig(FairseqDataclass):
-    label_smoothing: float = field(
-        default=0.0,
-        metadata={"help": "epsilon for label smoothing, 0 means no label smoothing"},
-    )
-    report_accuracy: bool = field(
-        default=False,
-        metadata={"help": "report accuracy metric"},
-    )
-    ignore_prefix_size: int = field(
-        default=0,
-        metadata={"help": "Ignore first N tokens"},
-    )
-    sentence_avg: bool = II("optimization.sentence_avg")
-
-
 def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=True):
     if target.dim() == lprobs.dim() - 1:
         target = target.unsqueeze(-1)
@@ -48,6 +31,23 @@ def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=T
     eps_i = epsilon / (lprobs.size(-1) - 1)
     loss = (1.0 - epsilon - eps_i) * nll_loss + eps_i * smooth_loss
     return loss, nll_loss
+
+
+@dataclass
+class LabelSmoothedCrossEntropyCriterionConfig(FairseqDataclass):
+    label_smoothing: float = field(
+        default=0.0,
+        metadata={"help": "epsilon for label smoothing, 0 means no label smoothing"},
+    )
+    report_accuracy: bool = field(
+        default=False,
+        metadata={"help": "report accuracy metric"},
+    )
+    ignore_prefix_size: int = field(
+        default=0,
+        metadata={"help": "Ignore first N tokens"},
+    )
+    sentence_avg: bool = II("optimization.sentence_avg")
 
 
 @register_criterion(
@@ -94,6 +94,17 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
             logging_output["total"] = utils.item(total.data)
         return loss, sample_size, logging_output
 
+    def compute_loss(self, model, net_output, sample, reduce=True):
+        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
+        loss, nll_loss = label_smoothed_nll_loss(
+            lprobs,
+            target,
+            self.eps,
+            ignore_index=self.padding_idx,
+            reduce=reduce,
+        )
+        return loss, nll_loss
+
     def get_lprobs_and_target(self, model, net_output, sample):
         lprobs = model.get_normalized_probs(net_output, log_probs=True)
         target = model.get_targets(sample, net_output)
@@ -106,17 +117,6 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
                 target = target[self.ignore_prefix_size :, :].contiguous()
         return lprobs.view(-1, lprobs.size(-1)), target.view(-1)
 
-    def compute_loss(self, model, net_output, sample, reduce=True):
-        lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
-        loss, nll_loss = label_smoothed_nll_loss(
-            lprobs,
-            target,
-            self.eps,
-            ignore_index=self.padding_idx,
-            reduce=reduce,
-        )
-        return loss, nll_loss
-
     def compute_accuracy(self, model, net_output, sample):
         lprobs, target = self.get_lprobs_and_target(model, net_output, sample)
         mask = target.ne(self.padding_idx)
@@ -125,6 +125,18 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         )
         total = torch.sum(mask)
         return n_correct, total
+
+    @staticmethod
+    def logging_outputs_can_be_summed() -> bool:
+        """
+        Whether the logging outputs returned by `forward` can be summed
+        across workers prior to calling `reduce_metrics`. Setting this
+        to True will improves distributed training speed.
+        """
+        return True
+
+
+
 
     @classmethod
     def reduce_metrics(cls, logging_outputs) -> None:
@@ -160,11 +172,4 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
                 else float("nan"),
             )
 
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
+
