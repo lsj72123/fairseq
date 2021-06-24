@@ -25,4 +25,5 @@ python fairseq_cli/train.py D:/datasets/iwslt15/en-vi/iwslt15_en_vi_cased/bin_th
 --log-format simple ^
 --sentence-avg ^
 --save-dir ./checkpoint/lstm-ot-en-vi-ot ^
---criterion label_smoothed_cross_entropy_with_ot
+--criterion label_smoothed_cross_entropy_with_ot ^
+--ot-weight-match 1.0

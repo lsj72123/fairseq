@@ -135,3 +135,5 @@ experimental/*
 # Weights and Biases logs
 wandb/
 checkpoint/
+
+train.cmd.copy
