@@ -18,11 +18,11 @@ python fairseq_cli/train.py D:/datasets/iwslt15/en-vi/iwslt15_en_vi_cased/bin_th
 --eval-bleu-print-samples ^
 --best-checkpoint-metric bleu ^
 --maximize-best-checkpoint-metric ^
---max-update 20000 ^
+--max-update 50000 ^
 --log-file log.txt ^
 --source-lang en ^
 --target-lang vi ^
 --log-format simple ^
 --sentence-avg ^
 --save-dir ./checkpoint/lstm-ot-en-vi-ot ^
---criterion label_smoothed_cross_entropy_with_ot
+--criterion label_smoothed_cross_entropy

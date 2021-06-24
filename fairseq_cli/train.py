@@ -12,7 +12,6 @@ import logging
 import math
 import os
 import sys
-from fairseq.utils import reset_logging
 from logging import config
 from typing import Dict, Optional, Any, List, Tuple, Callable
 
@@ -359,8 +358,6 @@ def main(cfg: FairseqConfig) -> None:
 
     # Print args
     logger.info(cfg)
-    if cfg.common.log_file is not None:
-        reset_logging()
 
     if cfg.checkpoint.write_checkpoints_asynchronously:  # todo
         try:
@@ -462,6 +459,11 @@ def main(cfg: FairseqConfig) -> None:
         log_file = cfg.common.log_file
     else:
         log_file = None
+
+    # remove handler because this logger will overwrite the criterion logger
+    if cfg.common.log_file is not None:
+        for handler in logger.handlers:
+            logger.removeHandler(handler)
     while epoch_itr.next_epoch_idx <= max_epoch:
         if lr <= cfg.optimization.stop_min_lr:
             logger.info(

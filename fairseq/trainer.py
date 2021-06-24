@@ -689,7 +689,7 @@ class Trainer(object):
                     if not self.cfg.optimization.use_bmuf or self._sync_stats()
                     else 1
                 )
-                self.optimizer.multiply_grads(numer / (sample_size or 1.0)) # take the average over the all tokens.
+                self.optimizer.multiply_grads(numer / (sample_size or 1.0))  # take the average over the all tokens.
                 # Note: (sample_size or 1.0) handles the case of a zero gradient, in a
                 # way that avoids CPU/device transfers in case sample_size is a GPU or
                 # TPU object. The assumption is that the gradient itself is also 0.

@@ -135,9 +135,6 @@ class LabelSmoothedCrossEntropyCriterion(FairseqCriterion):
         """
         return True
 
-
-
-
     @classmethod
     def reduce_metrics(cls, logging_outputs) -> None:
         """Aggregate logging outputs from data parallel training."""
