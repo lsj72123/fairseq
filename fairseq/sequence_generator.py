@@ -186,7 +186,6 @@ class SequenceGenerator(nn.Module):
         # Initialize constraints, when active
         self.search.init_constraints(constraints, beam_size)
 
-        max_len: int = -1
         if self.match_source_len:
             max_len = src_lengths.max().item()
         else:
@@ -227,11 +226,11 @@ class SequenceGenerator(nn.Module):
         # list of completed sentences
         finalized = torch.jit.annotate(
             List[List[Dict[str, Tensor]]],
-            [torch.jit.annotate(List[Dict[str, Tensor]], []) for i in range(bsz)],
+            [torch.jit.annotate(List[Dict[str, Tensor]], []) for _ in range(bsz)],
         )  # contains lists of dictionaries of information about the hypothesis being finalized at each step
 
         # a boolean array indicating if the sentence at the index is finished or not
-        finished = [False for i in range(bsz)]
+        finished = [False for _ in range(bsz)]
         num_remaining_sent = bsz  # number of sentences remaining
 
         # number of candidate hypos per step
@@ -244,8 +243,8 @@ class SequenceGenerator(nn.Module):
 
         reorder_state: Optional[Tensor] = None
         batch_idxs: Optional[Tensor] = None
-
         original_batch_idxs: Optional[Tensor] = None
+
         if "id" in sample and isinstance(sample["id"], Tensor):
             original_batch_idxs = sample["id"]
         else:

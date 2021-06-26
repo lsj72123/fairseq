@@ -23,7 +23,6 @@ from fairseq.models import FairseqDecoder, FairseqEncoder
 from omegaconf import DictConfig
 from torch import Tensor
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -56,10 +55,10 @@ class BaseFairseqModel(nn.Module):
         self._is_generation_fast = False
 
     def get_normalized_probs(
-        self,
-        net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
-        log_probs: bool,
-        sample: Optional[Dict[str, Tensor]] = None,
+            self,
+            net_output: Tuple[Tensor, Optional[Dict[str, List[Optional[Tensor]]]]],
+            log_probs: bool,
+            sample: Optional[Dict[str, Tensor]] = None,
     ):
         """Get normalized probabilities (or log probs) from a net's output."""
         return self.get_normalized_probs_scriptable(net_output, log_probs, sample)
@@ -99,20 +98,12 @@ class BaseFairseqModel(nn.Module):
         """Maximum length supported by the model."""
         return None
 
-
-
-
-
-
-
-
-
     def load_state_dict(
-        self,
-        state_dict,
-        strict=True,
-        model_cfg: Optional[DictConfig] = None,
-        args: Optional[Namespace] = None,
+            self,
+            state_dict,
+            strict=True,
+            model_cfg: Optional[DictConfig] = None,
+            args: Optional[Namespace] = None,
     ):
         """Copies parameters and buffers from *state_dict* into this module and
         its descendants.
@@ -159,12 +150,6 @@ class BaseFairseqModel(nn.Module):
 
         do_upgrade(self, name)
 
-    def set_num_updates(self, num_updates):
-        """State from trainer to pass along to model at every update."""
-        for m in self.modules():
-            if hasattr(m, "set_num_updates") and m != self:
-                m.set_num_updates(num_updates)
-
     def prepare_for_inference_(self, cfg: DictConfig):
         """Prepare model for inference."""
         kwargs = {"beamable_mm_beam_size": (
@@ -203,11 +188,11 @@ class BaseFairseqModel(nn.Module):
             base_func = BaseFairseqModel.make_generation_fast_
             for n, m in module.named_modules():
                 if (
-                    m != self
-                    and hasattr(m, "make_generation_fast_")
-                    # don't call this implementation again, e.g., if
-                    # children modules also inherit from BaseFairseqModel
-                    and m.make_generation_fast_.__func__ is not base_func
+                        m != self
+                        and hasattr(m, "make_generation_fast_")
+                        # don't call this implementation again, e.g., if
+                        # children modules also inherit from BaseFairseqModel
+                        and m.make_generation_fast_.__func__ is not base_func
                 ):
                     name = prefix + n
                     m.make_generation_fast_(name=name, **kwargs)
@@ -222,15 +207,21 @@ class BaseFairseqModel(nn.Module):
         self.eval()
         self.train = train
 
+    def set_num_updates(self, num_updates):
+        """State from trainer to pass along to model at every update."""
+        for m in self.modules():
+            if hasattr(m, "set_num_updates") and m != self:
+                m.set_num_updates(num_updates)
+
     def prepare_for_onnx_export_(self, **kwargs):
         """Make model exportable via ONNX trace."""
         seen = set()
 
         def apply_prepare_for_onnx_export_(module):
             if (
-                module != self
-                and hasattr(module, "prepare_for_onnx_export_")
-                and module not in seen
+                    module != self
+                    and hasattr(module, "prepare_for_onnx_export_")
+                    and module not in seen
             ):
                 seen.add(module)
                 module.prepare_for_onnx_export_(**kwargs)
@@ -239,11 +230,11 @@ class BaseFairseqModel(nn.Module):
 
     @classmethod
     def from_pretrained(
-        cls,
-        model_name_or_path,
-        checkpoint_file="model.pt",
-        data_name_or_path=".",
-        **kwargs,
+            cls,
+            model_name_or_path,
+            checkpoint_file="model.pt",
+            data_name_or_path=".",
+            **kwargs,
     ):
         """
         Load a :class:`~fairseq.models.FairseqModel` from a pre-trained model
@@ -413,8 +404,6 @@ class FairseqEncoderModel(BaseFairseqModel):
         return self.encoder.max_positions()
 
 
-
-
 class FairseqMultiModel(BaseFairseqModel):
     """Base class for combining multiple encoder-decoder models."""
 
@@ -435,11 +424,11 @@ class FairseqMultiModel(BaseFairseqModel):
 
     @staticmethod
     def build_shared_embeddings(
-        dicts: Dict[str, Dictionary],
-        langs: List[str],
-        embed_dim: int,
-        build_embedding: callable,
-        pretrained_embed_path: Optional[str] = None,
+            dicts: Dict[str, Dictionary],
+            langs: List[str],
+            embed_dim: int,
+            build_embedding: callable,
+            pretrained_embed_path: Optional[str] = None,
     ):
         """
         Helper function to build shared embeddings for a set of languages after
@@ -492,11 +481,11 @@ class FairseqMultiModel(BaseFairseqModel):
         return self.decoder(prev_output_tokens, **kwargs)
 
     def load_state_dict(
-        self,
-        state_dict,
-        strict=True,
-        model_cfg=None,
-        args: Optional[Namespace] = None,
+            self,
+            state_dict,
+            strict=True,
+            model_cfg=None,
+            args: Optional[Namespace] = None,
     ):
         """Copies parameters and buffers from *state_dict* into this module and
         its descendants.
@@ -576,6 +565,3 @@ class FairseqLanguageModel(BaseFairseqModel):
     @property
     def supported_targets(self):
         return {"future"}
-
-
-

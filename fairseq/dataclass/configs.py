@@ -659,6 +659,212 @@ class CheckpointConfig(FairseqDataclass):
     model_parallel_size: int = II("common.model_parallel_size")
 
 
+@dataclass
+class CommonEvalConfig(FairseqDataclass):
+    path: Optional[str] = field(
+        default=None,
+        metadata={"help": "path(s) to model file(s), colon separated"},
+    )
+    post_process: Optional[str] = field(
+        default=None,
+        metadata={"help": "post-process text by removing BPE, letter segmentation, etc. "
+                          "Valid options can be found in fairseq.data.utils.post_process.",
+                  "argparse_const": "subword_nmt",
+                  "argparse_alias": "--remove-bpe"},
+    )
+    quiet: bool = field(
+        default=False,
+        metadata={"help": "only print final scores"})
+    model_overrides: str = field(
+        default="{}",
+        metadata={"help": "a dictionary used to override model args at generation "
+                          "that were used during model training"},
+    )
+    results_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "path to save eval results (optional)"}
+    )
+
+
+@dataclass
+class GenerationConfig(FairseqDataclass):
+    beam: int = field(
+        default=5,
+        metadata={"help": "beam size"},
+    )
+    nbest: int = field(
+        default=1,
+        metadata={"help": "number of hypotheses to output"},
+    )
+    max_len_a: float = field(
+        default=0,
+        metadata={"help": "generate sequences of maximum length ax + b, where x is the source length"},
+    )
+    max_len_b: int = field(
+        default=200,
+        metadata={"help": "generate sequences of maximum length ax + b, where x is the source length"},
+    )
+    min_len: int = field(
+        default=1,
+        metadata={"help": "minimum generation length"},
+    )
+    match_source_len: bool = field(
+        default=False,
+        metadata={"help": "generations should match the source length"},
+    )
+    unnormalized: bool = field(
+        default=False,
+        metadata={"help": "compare unnormalized hypothesis scores"},
+    )
+    no_early_stop: bool = field(
+        default=False,
+        metadata={"help": "deprecated"},
+    )
+    no_beamable_mm: bool = field(
+        default=False,
+        metadata={"help": "don't use BeamableMM in attention layers"},
+    )
+    lenpen: float = field(
+        default=1,
+        metadata={"help": "length penalty: <1.0 favors shorter, >1.0 favors longer sentences"},
+    )
+    unkpen: float = field(
+        default=0,
+        metadata={"help": "unknown word penalty: <0 produces more unks, >0 produces fewer"},
+    )
+    replace_unk: Optional[str] = field(
+        default=None,
+        metadata={"help": "perform unknown replacement (optionally with alignment dictionary)",
+                  "argparse_const": "@@ ",
+        },
+    )
+    sacrebleu: bool = field(
+        default=False,
+        metadata={"help": "score with sacrebleu"},
+    )
+    score_reference: bool = field(
+        default=False,
+        metadata={"help": "just score the reference translation"},
+    )
+    prefix_size: int = field(
+        default=0,
+        metadata={"help": "initialize generation by target prefix of given length"},
+    )
+    no_repeat_ngram_size: int = field(
+        default=0,
+        metadata={"help": "ngram blocking such that this size ngram cannot be repeated in the generation"},
+    )
+    sampling: bool = field(
+        default=False,
+        metadata={"help": "sample hypotheses instead of using beam search"},
+    )
+    sampling_topk: int = field(
+        default=-1,
+        metadata={"help": "sample from top K likely next words instead of all words"},
+    )
+    sampling_topp: float = field(
+        default=-1.0,
+        metadata={"help": "sample from the smallest set whose cumulative probability mass exceeds p for next words"},
+    )
+    constraints: Optional[GENERATION_CONSTRAINTS_CHOICES] = field(
+        default=None,
+        metadata={"help": "enables lexically constrained decoding",
+                  "argparse_const": "ordered",},
+    )
+    temperature: float = field(
+        default=1.0,
+        metadata={"help": "temperature for generation"},
+    )
+    diverse_beam_groups: int = field(
+        default=-1,
+        metadata={"help": "number of groups for Diverse Beam Search"},
+    )
+    diverse_beam_strength: float = field(
+        default=0.5,
+        metadata={"help": "strength of diversity penalty for Diverse Beam Search"},
+    )
+    diversity_rate: float = field(
+        default=-1.0,
+        metadata={"help": "strength of diversity penalty for Diverse Siblings Search"},
+    )
+    print_alignment: Optional[PRINT_ALIGNMENT_CHOICES] = field(
+        default=None,
+        metadata={"help": "if set, uses attention feedback to compute and print alignment to source tokens "
+                          "(valid options are: hard, soft, otherwise treated as hard alignment)",
+                  "argparse_const": "hard",},
+    )
+    print_step: bool = field(
+        default=False,
+        metadata={"help": "print steps"},
+    )
+    lm_path: Optional[str] = field(
+        default=None,
+        metadata={"help": "path to lm checkpoint for lm fusion"},
+    )
+    lm_weight: float = field(
+        default=0.0,
+        metadata={"help": "weight for lm probs for lm fusion"},
+    )
+
+    # arguments for iterative refinement generator
+    iter_decode_eos_penalty: float = field(
+        default=0.0,
+        metadata={"help": "if > 0.0, it penalized early-stopping in decoding."},
+    )
+    iter_decode_max_iter: int = field(
+        default=10,
+        metadata={"help": "maximum iterations for iterative refinement."},
+    )
+    iter_decode_force_max_iter: bool = field(
+        default=False,
+        metadata={"help": "if set, run exact the maximum number of iterations without early stop"},
+    )
+    iter_decode_with_beam: int = field(
+        default=1,
+        metadata={"help": "if > 1, model will generate translations varying by the lengths."},
+    )
+    iter_decode_with_external_reranker: bool = field(
+        default=False,
+        metadata={"help": "if set, the last checkpoint are assumed to be a reranker to rescore the translations"},
+    )
+    retain_iter_history: bool = field(
+        default=False,
+        metadata={"help": "if set, decoding returns the whole history of iterative refinement"},
+    )
+    retain_dropout: bool = field(
+        default=False,
+        metadata={"help": "Use dropout at inference time"},
+    )
+    # temporarily set to Any until https://github.com/facebookresearch/hydra/issues/1117 is fixed
+    # retain_dropout_modules: Optional[List[str]] = field(
+    retain_dropout_modules: Any = field(
+        default=None,
+        metadata={"help": "if set, only retain dropout for the specified modules; "
+                          "if not set, then dropout will be retained for all modules"},
+    )
+    # special decoding format for advanced decoding.
+    decoding_format: Optional[GENERATION_DECODING_FORMAT_CHOICES] = field(
+        default=None,
+        metadata={"help": "special decoding format for advanced decoding."},
+    )
+    no_seed_provided: bool = field(
+        default=False,
+        metadata={"help": "if set, don't use seed for initializing random generators"},
+    )
+
+
+@dataclass
+class InteractiveConfig(FairseqDataclass):
+    buffer_size: int = field(
+        default=0,
+        metadata={"help": "read this many sentences into a buffer before processing them"},
+    )
+    input: str = field(
+        default="-",
+        metadata={"help": "file to read from; use - for stdin"},
+    )
+
+
 
 
 
@@ -692,210 +898,7 @@ class FairseqBMUFConfig(FairseqDataclass):
     distributed_world_size: int = II("distributed_training.distributed_world_size")
 
 
-@dataclass
-class GenerationConfig(FairseqDataclass):
-    beam: int = field(
-        default=5, metadata={"help": "beam size"},
-    )
-    nbest: int = field(
-        default=1, metadata={"help": "number of hypotheses to output"},
-    )
-    max_len_a: float = field(
-        default=0,
-        metadata={
-            "help": "generate sequences of maximum length ax + b, where x is the source length"
-        },
-    )
-    max_len_b: int = field(
-        default=200,
-        metadata={
-            "help": "generate sequences of maximum length ax + b, where x is the source length"
-        },
-    )
-    min_len: int = field(
-        default=1, metadata={"help": "minimum generation length"},
-    )
-    match_source_len: bool = field(
-        default=False, metadata={"help": "generations should match the source length"},
-    )
-    unnormalized: bool = field(
-        default=False, metadata={"help": "compare unnormalized hypothesis scores"},
-    )
-    no_early_stop: bool = field(
-        default=False, metadata={"help": "deprecated"},
-    )
-    no_beamable_mm: bool = field(
-        default=False, metadata={"help": "don't use BeamableMM in attention layers"},
-    )
-    lenpen: float = field(
-        default=1,
-        metadata={
-            "help": "length penalty: <1.0 favors shorter, >1.0 favors longer sentences"
-        },
-    )
-    unkpen: float = field(
-        default=0,
-        metadata={
-            "help": "unknown word penalty: <0 produces more unks, >0 produces fewer"
-        },
-    )
-    replace_unk: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "perform unknown replacement (optionally with alignment dictionary)",
-            "argparse_const": "@@ ",
-        },
-    )
-    sacrebleu: bool = field(
-        default=False, metadata={"help": "score with sacrebleu"},
-    )
-    score_reference: bool = field(
-        default=False, metadata={"help": "just score the reference translation"},
-    )
-    prefix_size: int = field(
-        default=0,
-        metadata={"help": "initialize generation by target prefix of given length"},
-    )
-    no_repeat_ngram_size: int = field(
-        default=0,
-        metadata={
-            "help": "ngram blocking such that this size ngram cannot be repeated in the generation"
-        },
-    )
-    sampling: bool = field(
-        default=False,
-        metadata={"help": "sample hypotheses instead of using beam search"},
-    )
-    sampling_topk: int = field(
-        default=-1,
-        metadata={"help": "sample from top K likely next words instead of all words"},
-    )
-    sampling_topp: float = field(
-        default=-1.0,
-        metadata={
-            "help": "sample from the smallest set whose cumulative probability mass exceeds p for next words"
-        },
-    )
-    constraints: Optional[GENERATION_CONSTRAINTS_CHOICES] = field(
-        default=None,
-        metadata={
-            "help": "enables lexically constrained decoding",
-            "argparse_const": "ordered",
-        },
-    )
-    temperature: float = field(
-        default=1.0, metadata={"help": "temperature for generation"},
-    )
-    diverse_beam_groups: int = field(
-        default=-1, metadata={"help": "number of groups for Diverse Beam Search"},
-    )
-    diverse_beam_strength: float = field(
-        default=0.5,
-        metadata={"help": "strength of diversity penalty for Diverse Beam Search"},
-    )
-    diversity_rate: float = field(
-        default=-1.0,
-        metadata={"help": "strength of diversity penalty for Diverse Siblings Search"},
-    )
-    print_alignment: Optional[PRINT_ALIGNMENT_CHOICES] = field(
-        default=None,
-        metadata={
-            "help": "if set, uses attention feedback to compute and print alignment to source tokens "
-                    "(valid options are: hard, soft, otherwise treated as hard alignment)",
-            "argparse_const": "hard",
-        },
-    )
-    print_step: bool = field(
-        default=False, metadata={"help": "print steps"},
-    )
-    lm_path: Optional[str] = field(
-        default=None, metadata={"help": "path to lm checkpoint for lm fusion"},
-    )
-    lm_weight: float = field(
-        default=0.0, metadata={"help": "weight for lm probs for lm fusion"},
-    )
 
-    # arguments for iterative refinement generator
-    iter_decode_eos_penalty: float = field(
-        default=0.0,
-        metadata={"help": "if > 0.0, it penalized early-stopping in decoding."},
-    )
-    iter_decode_max_iter: int = field(
-        default=10, metadata={"help": "maximum iterations for iterative refinement."},
-    )
-    iter_decode_force_max_iter: bool = field(
-        default=False,
-        metadata={
-            "help": "if set, run exact the maximum number of iterations without early stop"
-        },
-    )
-    iter_decode_with_beam: int = field(
-        default=1,
-        metadata={
-            "help": "if > 1, model will generate translations varying by the lengths."
-        },
-    )
-    iter_decode_with_external_reranker: bool = field(
-        default=False,
-        metadata={
-            "help": "if set, the last checkpoint are assumed to be a reranker to rescore the translations"
-        },
-    )
-    retain_iter_history: bool = field(
-        default=False,
-        metadata={
-            "help": "if set, decoding returns the whole history of iterative refinement"
-        },
-    )
-    retain_dropout: bool = field(
-        default=False, metadata={"help": "Use dropout at inference time"},
-    )
-    # temporarily set to Any until https://github.com/facebookresearch/hydra/issues/1117 is fixed
-    # retain_dropout_modules: Optional[List[str]] = field(
-    retain_dropout_modules: Any = field(
-        default=None,
-        metadata={
-            "help": "if set, only retain dropout for the specified modules; "
-                    "if not set, then dropout will be retained for all modules"
-        },
-    )
-    # special decoding format for advanced decoding.
-    decoding_format: Optional[GENERATION_DECODING_FORMAT_CHOICES] = field(
-        default=None,
-        metadata={"help": "special decoding format for advanced decoding."},
-    )
-    no_seed_provided: bool = field(
-        default=False,
-        metadata={"help": "if set, dont use seed for initializing random generators"},
-    )
-
-
-@dataclass
-class CommonEvalConfig(FairseqDataclass):
-    path: Optional[str] = field(
-        default=None, metadata={"help": "path(s) to model file(s), colon separated"},
-    )
-    post_process: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": (
-                "post-process text by removing BPE, letter segmentation, etc. "
-                "Valid options can be found in fairseq.data.utils.post_process."
-            ),
-            "argparse_const": "subword_nmt",
-            "argparse_alias": "--remove-bpe",
-        },
-    )
-    quiet: bool = field(default=False, metadata={"help": "only print final scores"})
-    model_overrides: str = field(
-        default="{}",
-        metadata={
-            "help": "a dictionary used to override model args at generation that were used during model training"
-        },
-    )
-    results_path: Optional[str] = field(
-        default=None, metadata={"help": "path to save eval results (optional)"}
-    )
 
 
 @dataclass
@@ -925,18 +928,6 @@ class EvalLMConfig(FairseqDataclass):
         },
     )
 
-
-@dataclass
-class InteractiveConfig(FairseqDataclass):
-    buffer_size: int = field(
-        default=0,
-        metadata={
-            "help": "read this many sentences into a buffer before processing them"
-        },
-    )
-    input: str = field(
-        default="-", metadata={"help": "file to read from; use - for stdin"},
-    )
 
 
 

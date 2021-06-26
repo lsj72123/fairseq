@@ -524,18 +524,134 @@ def _upgrade_state_dict(state):
     return state
 
 
+def load_model_ensemble(
+        filenames,
+        arg_overrides: Optional[Dict[str, Any]] = None,
+        task=None,
+        strict=True,
+        suffix="",
+        num_shards=1,
+        state=None,
+):
+    """Loads an ensemble of models.
+
+    Args:
+        filenames (List[str]): checkpoint files to load
+        arg_overrides (Dict[str,Any], optional): override model args that
+            were used during model training
+        task (fairseq.tasks.FairseqTask, optional): task to use for loading
+    """
+    assert not (
+            strict and num_shards > 1
+    ), "Cannot load state dict with strict=True and checkpoint shards > 1"
+    ensemble, args, _task = load_model_ensemble_and_task(
+        filenames,
+        arg_overrides,
+        task,
+        strict,
+        suffix,
+        num_shards,
+        state,
+    )
+    return ensemble, args
 
 
+def load_model_ensemble_and_task(
+        filenames,
+        arg_overrides: Optional[Dict[str, Any]] = None,
+        task=None,
+        strict=True,
+        suffix="",
+        num_shards=1,
+        state=None,
+):
+    assert state is None or len(filenames) == 1
+
+    from fairseq import tasks
+
+    assert not (
+            strict and num_shards > 1
+    ), "Cannot load state dict with strict=True and checkpoint shards > 1"
+    ensemble = []
+    cfg = None
+    for filename in filenames:
+        orig_filename = filename
+        model_shard_state = {"shard_weights": [], "shard_metadata": []}
+        assert num_shards > 0
+        st = time.time()
+        for shard_idx in range(num_shards):
+            filename = get_maybe_sharded_checkpoint_filename(
+                orig_filename, suffix, shard_idx, num_shards
+            )
+
+            if not PathManager.exists(filename):
+                raise IOError("Model file not found: {}".format(filename))
+            if state is None:
+                state = load_checkpoint_to_cpu(filename, arg_overrides)
+            if "args" in state and state["args"] is not None:
+                cfg = convert_namespace_to_omegaconf(state["args"])
+            elif "cfg" in state and state["cfg"] is not None:
+                cfg = state["cfg"]
+            else:
+                raise RuntimeError(
+                    f"Neither args nor cfg exist in state keys = {state.keys()}"
+                )
+
+            if task is None:
+                task = tasks.setup_task(cfg.task)
+
+            if "task_state" in state:
+                task.load_state_dict(state["task_state"])
+
+            if "fsdp_metadata" in state and num_shards > 1:
+                model_shard_state["shard_weights"].append(state["model"])
+                model_shard_state["shard_metadata"].append(state["fsdp_metadata"])
+                # check FSDP import before the code goes too far
+                if not has_FSDP:
+                    raise ImportError(
+                        "Cannot find FullyShardedDataParallel. "
+                        "Please install fairscale with: pip install fairscale"
+                    )
+                if shard_idx == num_shards - 1:
+                    consolidated_model_state = FSDP.consolidate_shard_weights(
+                        shard_weights=model_shard_state["shard_weights"],
+                        shard_metadata=model_shard_state["shard_metadata"],
+                    )
+                    model = task.build_model(cfg.model)
+                    model.load_state_dict(
+                        consolidated_model_state, strict=strict, model_cfg=cfg.model
+                    )
+            else:
+                # model parallel checkpoint or unsharded checkpoint
+                model = task.build_model(cfg.model)
+                model.load_state_dict(
+                    state["model"], strict=strict, model_cfg=cfg.model
+                )
+
+            # reset state so it gets loaded for the next model in ensemble
+            state = None
+            if shard_idx % 10 == 0 and shard_idx > 0:
+                elapsed = time.time() - st
+                logger.info(f"Loaded {shard_idx} shards in {elapsed:.2f}s, {elapsed / (shard_idx + 1):.2f}s/shard")
+
+        # build model for ensemble
+        ensemble.append(model)
+    return ensemble, cfg, task
 
 
-
-
-
-
-
-
-
-
+def get_maybe_sharded_checkpoint_filename(
+        filename: str, suffix: str, shard_idx: int, num_shards: int
+) -> str:
+    orig_filename = filename
+    filename = filename.replace(".pt", suffix + ".pt")
+    fsdp_filename = filename[:-3] + f"-shard{shard_idx}.pt"
+    model_parallel_filename = orig_filename[:-3] + f"_part{shard_idx}.pt"
+    if PathManager.exists(fsdp_filename):
+        return fsdp_filename
+    elif num_shards > 1:
+        return model_parallel_filename
+    else:
+        return filename
 
 
 def prune_state_dict(state_dict, model_cfg: Optional[DictConfig]):  # todo: after read the original paper
@@ -646,143 +762,6 @@ def prune_state_dict(state_dict, model_cfg: Optional[DictConfig]):  # todo: afte
 
 
 
-
-
-
-
-
-
-
-
-
-def load_model_ensemble(
-        filenames,
-        arg_overrides: Optional[Dict[str, Any]] = None,
-        task=None,
-        strict=True,
-        suffix="",
-        num_shards=1,
-        state=None,
-):
-    """Loads an ensemble of models.
-
-    Args:
-        filenames (List[str]): checkpoint files to load
-        arg_overrides (Dict[str,Any], optional): override model args that
-            were used during model training
-        task (fairseq.tasks.FairseqTask, optional): task to use for loading
-    """
-    assert not (
-            strict and num_shards > 1
-    ), "Cannot load state dict with strict=True and checkpoint shards > 1"
-    ensemble, args, _task = load_model_ensemble_and_task(
-        filenames,
-        arg_overrides,
-        task,
-        strict,
-        suffix,
-        num_shards,
-        state,
-    )
-    return ensemble, args
-
-
-def get_maybe_sharded_checkpoint_filename(
-        filename: str, suffix: str, shard_idx: int, num_shards: int
-) -> str:
-    orig_filename = filename
-    filename = filename.replace(".pt", suffix + ".pt")
-    fsdp_filename = filename[:-3] + f"-shard{shard_idx}.pt"
-    model_parallel_filename = orig_filename[:-3] + f"_part{shard_idx}.pt"
-    if PathManager.exists(fsdp_filename):
-        return fsdp_filename
-    elif num_shards > 1:
-        return model_parallel_filename
-    else:
-        return filename
-
-
-def load_model_ensemble_and_task(
-        filenames,
-        arg_overrides: Optional[Dict[str, Any]] = None,
-        task=None,
-        strict=True,
-        suffix="",
-        num_shards=1,
-        state=None,
-):
-    assert state is None or len(filenames) == 1
-
-    from fairseq import tasks
-
-    assert not (
-            strict and num_shards > 1
-    ), "Cannot load state dict with strict=True and checkpoint shards > 1"
-    ensemble = []
-    cfg = None
-    for filename in filenames:
-        orig_filename = filename
-        model_shard_state = {"shard_weights": [], "shard_metadata": []}
-        assert num_shards > 0
-        st = time.time()
-        for shard_idx in range(num_shards):
-            filename = get_maybe_sharded_checkpoint_filename(
-                orig_filename, suffix, shard_idx, num_shards
-            )
-
-            if not PathManager.exists(filename):
-                raise IOError("Model file not found: {}".format(filename))
-            if state is None:
-                state = load_checkpoint_to_cpu(filename, arg_overrides)
-            if "args" in state and state["args"] is not None:
-                cfg = convert_namespace_to_omegaconf(state["args"])
-            elif "cfg" in state and state["cfg"] is not None:
-                cfg = state["cfg"]
-            else:
-                raise RuntimeError(
-                    f"Neither args nor cfg exist in state keys = {state.keys()}"
-                )
-
-            if task is None:
-                task = tasks.setup_task(cfg.task)
-
-            if "task_state" in state:
-                task.load_state_dict(state["task_state"])
-
-            if "fsdp_metadata" in state and num_shards > 1:
-                model_shard_state["shard_weights"].append(state["model"])
-                model_shard_state["shard_metadata"].append(state["fsdp_metadata"])
-                # check FSDP import before the code goes too far
-                if not has_FSDP:
-                    raise ImportError(
-                        "Cannot find FullyShardedDataParallel. "
-                        "Please install fairscale with: pip install fairscale"
-                    )
-                if shard_idx == num_shards - 1:
-                    consolidated_model_state = FSDP.consolidate_shard_weights(
-                        shard_weights=model_shard_state["shard_weights"],
-                        shard_metadata=model_shard_state["shard_metadata"],
-                    )
-                    model = task.build_model(cfg.model)
-                    model.load_state_dict(
-                        consolidated_model_state, strict=strict, model_cfg=cfg.model
-                    )
-            else:
-                # model parallel checkpoint or unsharded checkpoint
-                model = task.build_model(cfg.model)
-                model.load_state_dict(
-                    state["model"], strict=strict, model_cfg=cfg.model
-                )
-
-            # reset state so it gets loaded for the next model in ensemble
-            state = None
-            if shard_idx % 10 == 0 and shard_idx > 0:
-                elapsed = time.time() - st
-                logger.info(f"Loaded {shard_idx} shards in {elapsed:.2f}s, {elapsed / (shard_idx + 1):.2f}s/shard")
-
-        # build model for ensemble
-        ensemble.append(model)
-    return ensemble, cfg, task
 
 
 def checkpoint_paths(path, pattern=r"checkpoint(\d+)\.pt", keep_match=False):

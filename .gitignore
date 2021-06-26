@@ -137,3 +137,4 @@ wandb/
 checkpoint/
 train.cmd
 train.cmd.copy
+generate.cmd

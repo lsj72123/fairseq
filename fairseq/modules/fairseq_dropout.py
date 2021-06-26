@@ -25,13 +25,6 @@ class FairseqDropout(nn.Module):
         else:
             return x
 
-
-
-
-
-
-
-
     def make_generation_fast_(
             self,
             name: str,

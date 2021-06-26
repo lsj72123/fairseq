@@ -62,11 +62,6 @@ class Scorer(object):
         else:
             self.C.bleu_zero_init(ctypes.byref(self.stat))
 
-
-
-
-
-
     def add(self, ref, pred):
         if not isinstance(ref, torch.IntTensor):
             raise TypeError("ref must be a torch.IntTensor (got {})".format(type(ref)))
@@ -91,27 +86,6 @@ class Scorer(object):
             ctypes.c_int(self.eos),
         )
 
-    def score(self, order=4):
-        psum = sum(
-            math.log(p) if p > 0 else float("-Inf") for p in self.precision()[:order]
-        )
-        return self.brevity() * math.exp(psum / order) * 100
-
-    def precision(self):
-        def ratio(a, b):
-            return a / b if b > 0 else 0
-
-        return [
-            ratio(self.stat.match1, self.stat.count1),
-            ratio(self.stat.match2, self.stat.count2),
-            ratio(self.stat.match3, self.stat.count3),
-            ratio(self.stat.match4, self.stat.count4),
-        ]
-
-    def brevity(self):
-        r = self.stat.reflen / self.stat.predlen
-        return min(1, math.exp(1 - r))
-
     def result_string(self, order=4):
         assert order <= 4, "BLEU scores for order > 4 aren't supported"
         fmt = "BLEU{} = {:2.2f}, {:2.1f}"
@@ -129,10 +103,26 @@ class Scorer(object):
             self.stat.reflen
         )
 
+    def score(self, order=4):
+        psum = sum(
+            math.log(p) if p > 0 else float("-Inf") for p in self.precision()[:order]
+        )
+        return self.brevity() * math.exp(psum / order) * 100
 
+    def brevity(self):
+        r = self.stat.reflen / self.stat.predlen
+        return min(1, math.exp(1 - r))
 
+    def precision(self):
+        def ratio(a, b):
+            return a / b if b > 0 else 0
 
-
+        return [
+            ratio(self.stat.match1, self.stat.count1),
+            ratio(self.stat.match2, self.stat.count2),
+            ratio(self.stat.match3, self.stat.count3),
+            ratio(self.stat.match4, self.stat.count4),
+        ]
 
 
 @dataclass
@@ -149,21 +139,6 @@ class SacrebleuConfig(FairseqDataclass):
         default=False,
         metadata={"help": "evaluate at character level"}
     )
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @register_scorer("sacrebleu", dataclass=SacrebleuConfig)
@@ -193,9 +168,3 @@ class SacrebleuScorer(BaseScorer):
         return self.sacrebleu.corpus_bleu(
             self.pred, [self.ref], tokenize="none"
         ).format()
-
-
-
-
-
-

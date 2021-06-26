@@ -427,8 +427,44 @@ class CudaEnvironment(object):
         logger.info(first_line)
 
 
+def load_align_dict(replace_unk):
+    if replace_unk is None:
+        align_dict = None
+    elif isinstance(replace_unk, str) and len(replace_unk) > 0:
+        # Load alignment dictionary for unknown word replacement if it was passed as an argument.
+        align_dict = {}
+        with open(replace_unk, "r") as f:
+            for line in f:
+                cols = line.split()
+                align_dict[cols[0]] = cols[1]
+    else:
+        # No alignment dictionary provided but we still want to perform unknown word replacement by copying the
+        # original source word.
+        align_dict = {}
+    return align_dict
 
 
+def post_process_prediction(
+        hypo_tokens,
+        src_str,
+        alignment,
+        align_dict,
+        tgt_dict,
+        remove_bpe=None,
+        extra_symbols_to_ignore=None,
+):
+    hypo_str = tgt_dict.string(
+        hypo_tokens, remove_bpe, extra_symbols_to_ignore=extra_symbols_to_ignore
+    )
+    if align_dict is not None:
+        hypo_str = replace_unk(
+            hypo_str, src_str, alignment, align_dict, tgt_dict.unk_string()
+        )
+    if align_dict is not None or remove_bpe is not None:
+        # Convert back to tokens for evaluating with unk replacement or without BPE
+        # Note that the dictionary can be modified inside the method.
+        hypo_tokens = tgt_dict.encode_line(hypo_str, add_if_not_exist=True)
+    return hypo_tokens, hypo_str, alignment
 
 
 
@@ -454,21 +490,7 @@ def parse_alignment(line):
     return parsed_alignment
 
 
-def load_align_dict(replace_unk):
-    if replace_unk is None:
-        align_dict = None
-    elif isinstance(replace_unk, str) and len(replace_unk) > 0:
-        # Load alignment dictionary for unknown word replacement if it was passed as an argument.
-        align_dict = {}
-        with open(replace_unk, "r") as f:
-            for line in f:
-                cols = line.split()
-                align_dict[cols[0]] = cols[1]
-    else:
-        # No alignment dictionary provided but we still want to perform unknown word replacement by copying the
-        # original source word.
-        align_dict = {}
-    return align_dict
+
 
 
 
@@ -625,27 +647,7 @@ def replace_unk(hypo_str, src_str, alignment, align_dict, unk):
     return " ".join(hypo_tokens)
 
 
-def post_process_prediction(
-        hypo_tokens,
-        src_str,
-        alignment,
-        align_dict,
-        tgt_dict,
-        remove_bpe=None,
-        extra_symbols_to_ignore=None,
-):
-    hypo_str = tgt_dict.string(
-        hypo_tokens, remove_bpe, extra_symbols_to_ignore=extra_symbols_to_ignore
-    )
-    if align_dict is not None:
-        hypo_str = replace_unk(
-            hypo_str, src_str, alignment, align_dict, tgt_dict.unk_string()
-        )
-    if align_dict is not None or remove_bpe is not None:
-        # Convert back to tokens for evaluating with unk replacement or without BPE
-        # Note that the dictionary can be modified inside the method.
-        hypo_tokens = tgt_dict.encode_line(hypo_str, add_if_not_exist=True)
-    return hypo_tokens, hypo_str, alignment
+
 
 
 def make_positions(tensor, padding_idx: int, onnx_trace: bool = False):

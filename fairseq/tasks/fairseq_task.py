@@ -582,6 +582,18 @@ class FairseqTask(object):
             return self.state.state_dict
         return {}
 
+    def load_state_dict(self, state_dict: Dict[str, Any]):
+        if self.state is not None:
+            self.state.merge_state_dict(state_dict)
+
+    def build_tokenizer(self, args):
+        """Build the pre-tokenizer for this task."""
+        return encoders.build_tokenizer(args)
+
+    def build_bpe(self, args):
+        """Build the tokenizer for this task."""
+        return encoders.build_bpe(args)
+
 
 
     @staticmethod
@@ -592,13 +604,6 @@ class FairseqTask(object):
         Setting this to True will improves distributed training speed.
         """
         return criterion.logging_outputs_can_be_summed()
-
-
-
-
-
-
-
 
 
 
@@ -614,9 +619,6 @@ class FairseqTask(object):
             return agg.get_smoothed_values()
 
 
-
-
-
     def build_dataset_for_inference(
         self, src_tokens: List[torch.Tensor], src_lengths: List[int], **kwargs
     ) -> torch.utils.data.Dataset:
@@ -627,56 +629,6 @@ class FairseqTask(object):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    def load_state_dict(self, state_dict: Dict[str, Any]):
-        if self.state is not None:
-            self.state.merge_state_dict(state_dict)
-
-
-
-
-
-
-
-    def build_tokenizer(self, args):
-        """Build the pre-tokenizer for this task."""
-        return encoders.build_tokenizer(args)
-
-    def build_bpe(self, args):
-        """Build the tokenizer for this task."""
-        return encoders.build_bpe(args)
-
     def get_interactive_tokens_and_lengths(self, lines, encode_fn):
         tokens = [
             self.source_dictionary.encode_line(
@@ -686,11 +638,6 @@ class FairseqTask(object):
         ]
         lengths = [t.numel() for t in tokens]
         return tokens, lengths
-
-
-
-
-
 
 
 

@@ -169,7 +169,7 @@ class LabelSmoothedCrossEntropyCriterion_OT(FairseqCriterion):
         else:
             decoder_embedding = model.decoder.embed_tokens.weight
 
-        output_embed = torch.matmul(probs, decoder_embedding)
+        output_embed = torch.matmul(probs, decoder_embedding)   # average embedding
         output_embed_norm = normalize(output_embed, p=2, dim=-1, eps=1e-12)  # take the average embedding
         output_embed_norm = output_embed_norm.view([sample["nsentences"], -1, output_embed_norm.size(-1)]).contiguous()
 

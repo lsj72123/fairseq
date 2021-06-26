@@ -26,35 +26,9 @@ class BaseScorer(ABC):
     def result_string(self) -> str:
         pass
 
-
-
     def add_string(self, ref, pred):
         self.ref.append(ref)
         self.pred.append(pred)
-
-
-
-
-
-
-_build_scorer, register_scorer, SCORER_REGISTRY, _ = registry.setup_registry(
-    "--scoring", default="bleu"
-)
-
-
-# automatically import any Python files in the current directory
-for file in sorted(os.listdir(os.path.dirname(__file__))):
-    if file.endswith(".py") and not file.startswith("_"):
-        module = file[: file.find(".py")]
-        importlib.import_module("fairseq.scoring." + module)
-
-
-
-
-
-
-
-
 
 
 def build_scorer(choice, tgt_dict):
@@ -69,4 +43,12 @@ def build_scorer(choice, tgt_dict):
     return _build_scorer(choice)
 
 
+_build_scorer, register_scorer, SCORER_REGISTRY, _ = registry.setup_registry(
+    "--scoring", default="bleu"
+)
 
+# automatically import any Python files in the current directory
+for file in sorted(os.listdir(os.path.dirname(__file__))):
+    if file.endswith(".py") and not file.startswith("_"):
+        module = file[: file.find(".py")]
+        importlib.import_module("fairseq.scoring." + module)

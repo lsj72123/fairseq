@@ -43,6 +43,17 @@ def get_preprocessing_parser(default_task="translation"):
     return parser
 
 
+def get_generation_parser(interactive=False, default_task="translation"):
+    parser = get_parser("Generation", default_task)
+    add_dataset_args(parser, gen=True)
+    add_distributed_training_args(parser, default_world_size=1)
+    add_generation_args(parser)
+    add_checkpoint_args(parser)
+    if interactive:
+        add_interactive_args(parser)
+    return parser
+
+
 def get_parser(desc, default_task="translation"):
     # Before creating the true parser, we need to import optional user module
     # in order to eagerly import custom tasks, optimizers, architectures, etc.
@@ -82,6 +93,11 @@ def add_dataset_args(parser, train=False, gen=False):
     gen_parser_from_dataclass(group, DatasetConfig())
     # fmt: on
     return group
+
+
+def add_interactive_args(parser):
+    group = parser.add_argument_group("Interactive")
+    gen_parser_from_dataclass(group, InteractiveConfig())
 
 
 def add_distributed_training_args(parser, default_world_size=None):
@@ -194,6 +210,17 @@ def add_preprocess_args(parser):
                        help="if true, only builds a dictionary and then exits")
     # fmt: on
     return parser
+
+
+def add_common_eval_args(group):
+    gen_parser_from_dataclass(group, CommonEvalConfig())
+
+
+def add_generation_args(parser):
+    group = parser.add_argument_group("Generation")
+    add_common_eval_args(group)
+    gen_parser_from_dataclass(group, GenerationConfig())
+    return group
 
 
 def parse_args_and_arch(
@@ -353,15 +380,7 @@ def parse_args_and_arch(
 
 
 
-def get_generation_parser(interactive=False, default_task="translation"):
-    parser = get_parser("Generation", default_task)
-    add_dataset_args(parser, gen=True)
-    add_distributed_training_args(parser, default_world_size=1)
-    add_generation_args(parser)
-    add_checkpoint_args(parser)
-    if interactive:
-        add_interactive_args(parser)
-    return parser
+
 
 
 def get_interactive_generation_parser(default_task="translation"):
@@ -385,8 +404,7 @@ def get_validation_parser(default_task=None):
     return parser
 
 
-def add_common_eval_args(group):
-    gen_parser_from_dataclass(group, CommonEvalConfig())
+
 
 
 def add_eval_lm_args(parser):
@@ -395,16 +413,10 @@ def add_eval_lm_args(parser):
     gen_parser_from_dataclass(group, EvalLMConfig())
 
 
-def add_generation_args(parser):
-    group = parser.add_argument_group("Generation")
-    add_common_eval_args(group)
-    gen_parser_from_dataclass(group, GenerationConfig())
-    return group
 
 
-def add_interactive_args(parser):
-    group = parser.add_argument_group("Interactive")
-    gen_parser_from_dataclass(group, InteractiveConfig())
+
+
 
 
 def get_args(

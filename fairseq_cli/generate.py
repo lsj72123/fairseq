@@ -17,36 +17,20 @@ from itertools import chain
 
 import numpy as np
 import torch
+
+logging.basicConfig(
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=os.environ.get("LOGLEVEL", "INFO").upper(),
+    stream=sys.stdout,
+)
+logger = logging.getLogger("fairseq_cli.generate")
+
 from fairseq import checkpoint_utils, options, scoring, tasks, utils
 from fairseq.dataclass.utils import convert_namespace_to_omegaconf
 from fairseq.logging import progress_bar
 from fairseq.logging.meters import StopwatchMeter, TimeMeter
 from omegaconf import DictConfig
-
-
-def main(cfg: DictConfig):
-
-    if isinstance(cfg, Namespace):
-        cfg = convert_namespace_to_omegaconf(cfg)
-
-    assert cfg.common_eval.path is not None, "--path required for generation!"
-    assert (
-        not cfg.generation.sampling or cfg.generation.nbest == cfg.generation.beam
-    ), "--sampling requires --nbest to be equal to --beam"
-    assert (
-        cfg.generation.replace_unk is None or cfg.dataset.dataset_impl == "raw"
-    ), "--replace-unk requires a raw text dataset (--dataset-impl=raw)"
-
-    if cfg.common_eval.results_path is not None:
-        os.makedirs(cfg.common_eval.results_path, exist_ok=True)
-        output_path = os.path.join(
-            cfg.common_eval.results_path,
-            "generate-{}.txt".format(cfg.dataset.gen_subset),
-        )
-        with open(output_path, "w", buffering=1, encoding="utf-8") as h:
-            return _main(cfg, h)
-    else:
-        return _main(cfg, sys.stdout)
 
 
 def get_symbols_to_strip_from_output(generator):
@@ -56,15 +40,7 @@ def get_symbols_to_strip_from_output(generator):
         return {generator.eos}
 
 
-def _main(cfg: DictConfig, output_file):
-    logging.basicConfig(
-        format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        level=os.environ.get("LOGLEVEL", "INFO").upper(),
-        stream=output_file,
-    )
-    logger = logging.getLogger("fairseq_cli.generate")
-
+def _main(cfg: DictConfig):
     utils.import_user_module(cfg.common)
 
     if cfg.dataset.max_tokens is None and cfg.dataset.batch_size is None:
@@ -80,7 +56,6 @@ def _main(cfg: DictConfig, output_file):
 
     # Load dataset splits
     task = tasks.setup_task(cfg.task)
-
 
     # Set dictionaries
     try:
@@ -254,9 +229,9 @@ def _main(cfg: DictConfig, output_file):
 
             if not cfg.common_eval.quiet:
                 if src_dict is not None:
-                    print("S-{}\t{}".format(sample_id, src_str), file=output_file)
+                    logger.info("S-{}\t{}".format(sample_id, src_str))
                 if has_target:
-                    print("T-{}\t{}".format(sample_id, target_str), file=output_file)
+                    logger.info("T-{}\t{}".format(sample_id, target_str))
 
             # Process top predictions
             for j, hypo in enumerate(hypos[i][: cfg.generation.nbest]):
@@ -273,63 +248,47 @@ def _main(cfg: DictConfig, output_file):
                 if not cfg.common_eval.quiet:
                     score = hypo["score"] / math.log(2)  # convert to base 2
                     # original hypothesis (after tokenization and BPE)
-                    print(
-                        "H-{}\t{}\t{}".format(sample_id, score, hypo_str),
-                        file=output_file,
-                    )
+                    logger.info("H-{}\t{}\t{}".format(sample_id, score, hypo_str))
+
                     # detokenized hypothesis
-                    print(
-                        "D-{}\t{}\t{}".format(sample_id, score, detok_hypo_str),
-                        file=output_file,
-                    )
-                    print(
-                        "P-{}\t{}".format(
-                            sample_id,
-                            " ".join(
-                                map(
-                                    lambda x: "{:.4f}".format(x),
-                                    # convert from base e to base 2
-                                    hypo["positional_scores"]
+                    logger.info("D-{}\t{}\t{}".format(sample_id, score, detok_hypo_str))
+                    logger.info("P-{}\t{}".format(
+                        sample_id,
+                        " ".join(
+                            map(
+                                lambda x: "{:.4f}".format(x),
+                                # convert from base e to base 2
+                                hypo["positional_scores"]
                                     .div_(math.log(2))
                                     .tolist(),
-                                )
-                            ),
+                            )
                         ),
-                        file=output_file,
-                    )
+                    ))
 
                     if cfg.generation.print_alignment == "hard":
-                        print(
-                            "A-{}\t{}".format(
-                                sample_id,
-                                " ".join(
-                                    [
-                                        "{}-{}".format(src_idx, tgt_idx)
-                                        for src_idx, tgt_idx in alignment
-                                    ]
-                                ),
+                        logger.info("A-{}\t{}".format(
+                            sample_id,
+                            " ".join(
+                                [
+                                    "{}-{}".format(src_idx, tgt_idx)
+                                    for src_idx, tgt_idx in alignment
+                                ]
                             ),
-                            file=output_file,
-                        )
+                        ))
+
                     if cfg.generation.print_alignment == "soft":
-                        print(
-                            "A-{}\t{}".format(
-                                sample_id,
-                                " ".join(
-                                    [
-                                        ",".join(src_probs)
-                                        for src_probs in alignment
-                                    ]
-                                ),
+                        logger.info("A-{}\t{}".format(
+                            sample_id,
+                            " ".join(
+                                [
+                                    ",".join(src_probs)
+                                    for src_probs in alignment
+                                ]
                             ),
-                            file=output_file,
-                        )
+                        ))
 
                     if cfg.generation.print_step:
-                        print(
-                            "I-{}\t{}".format(sample_id, hypo["steps"]),
-                            file=output_file,
-                        )
+                        logger.info("I-{}\t{}".format(sample_id, hypo["steps"]))
 
                     if cfg.generation.retain_iter_history:
                         for step, h in enumerate(hypo["history"]):
@@ -341,10 +300,7 @@ def _main(cfg: DictConfig, output_file):
                                 tgt_dict=tgt_dict,
                                 remove_bpe=None,
                             )
-                            print(
-                                "E-{}_{}\t{}".format(sample_id, step, h_str),
-                                file=output_file,
-                            )
+                            logger.info("E-{}_{}\t{}".format(sample_id, step, h_str))
 
                 # Score only the top hypothesis
                 if has_target and j == 0:
@@ -388,14 +344,35 @@ def _main(cfg: DictConfig, output_file):
                     "If you are using BPE on the target side, the BLEU score is computed on BPE tokens, not on proper words.  Use --sacrebleu for standard 13a BLEU tokenization"
                 )
         # use print to be consistent with other main outputs: S-, H-, T-, D- and so on
-        print(
-            "Generate {} with beam={}: {}".format(
-                cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string()
-            ),
-            file=output_file,
-        )
+        logger.info("Generate {} with beam={}: {}".format(
+            cfg.dataset.gen_subset, cfg.generation.beam, scorer.result_string()
+        ))
 
     return scorer
+
+
+def main(cfg: DictConfig):
+    if isinstance(cfg, Namespace):
+        cfg = convert_namespace_to_omegaconf(cfg)
+
+    assert cfg.common_eval.path is not None, "--path required for generation!"
+    assert (
+            not cfg.generation.sampling or cfg.generation.nbest == cfg.generation.beam
+    ), "--sampling requires --nbest to be equal to --beam"
+    assert (
+            cfg.generation.replace_unk is None or cfg.dataset.dataset_impl == "raw"
+    ), "--replace-unk requires a raw text dataset (--dataset-impl=raw)"
+
+    if cfg.common_eval.results_path is not None:
+        os.makedirs(cfg.common_eval.results_path, exist_ok=True)
+        output_path = os.path.join(
+            cfg.common_eval.results_path,
+            "generate-{}.txt".format(cfg.dataset.gen_subset),
+        )
+        handler = logging.FileHandler(filename=output_path, mode='w', encoding='utf-8')
+        logger.addHandler(handler)
+
+    return _main(cfg)
 
 
 def cli_main():
