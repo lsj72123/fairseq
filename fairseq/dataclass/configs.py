@@ -20,7 +20,6 @@ from fairseq.dataclass.constants import (
     PRINT_ALIGNMENT_CHOICES,
     ZERO_SHARDING_CHOICES,
 )
-
 from omegaconf import II, MISSING
 
 
@@ -736,7 +735,7 @@ class GenerationConfig(FairseqDataclass):
         default=None,
         metadata={"help": "perform unknown replacement (optionally with alignment dictionary)",
                   "argparse_const": "@@ ",
-        },
+                  },
     )
     sacrebleu: bool = field(
         default=False,
@@ -769,7 +768,7 @@ class GenerationConfig(FairseqDataclass):
     constraints: Optional[GENERATION_CONSTRAINTS_CHOICES] = field(
         default=None,
         metadata={"help": "enables lexically constrained decoding",
-                  "argparse_const": "ordered",},
+                  "argparse_const": "ordered", },
     )
     temperature: float = field(
         default=1.0,
@@ -791,7 +790,7 @@ class GenerationConfig(FairseqDataclass):
         default=None,
         metadata={"help": "if set, uses attention feedback to compute and print alignment to source tokens "
                           "(valid options are: hard, soft, otherwise treated as hard alignment)",
-                  "argparse_const": "hard",},
+                  "argparse_const": "hard", },
     )
     print_step: bool = field(
         default=False,
@@ -865,25 +864,48 @@ class InteractiveConfig(FairseqDataclass):
     )
 
 
-
-
-
-
+@dataclass
+class EvalLMConfig(FairseqDataclass):
+    output_word_probs: bool = field(
+        default=False,
+        metadata={"help": "if set, outputs words and their predicted "
+                          "log probabilities to standard output"},
+    )
+    output_word_stats: bool = field(
+        default=False,
+        metadata={"help": "if set, outputs word statistics such as word count, "
+                          "average probability, etc"},
+    )
+    context_window: int = field(
+        default=0,
+        metadata={"help": "ensures that every evaluated token has access to a "
+                          "context of at least this size, if possible"},
+    )
+    softmax_batch: int = field(
+        default=sys.maxsize,
+        metadata={"help": "if BxT is more than this, "
+                          "will batch the softmax over vocab to this amount of tokens, "
+                          "in order to fit into GPU memory"},
+    )
 
 
 @dataclass
 class FairseqBMUFConfig(FairseqDataclass):
     block_lr: float = field(
-        default=1, metadata={"help": "block learning rate for bmuf"}
+        default=1,
+        metadata={"help": "block learning rate for bmuf"}
     )
     block_momentum: float = field(
-        default=0.875, metadata={"help": "block momentum for bmuf"}
+        default=0.875,
+        metadata={"help": "block momentum for bmuf"}
     )
     global_sync_iter: int = field(
-        default=50, metadata={"help": "Iteration for syncing global model"}
+        default=50,
+        metadata={"help": "Iteration for syncing global model"}
     )
     warmup_iterations: int = field(
-        default=500, metadata={"help": "warmup iterations for model to broadcast"}
+        default=500,
+        metadata={"help": "warmup iterations for model to broadcast"}
     )
     use_nbm: bool = field(
         default=False,
@@ -891,44 +913,9 @@ class FairseqBMUFConfig(FairseqDataclass):
     )
     average_sync: bool = field(
         default=False,
-        metadata={
-            "help": "Specify whether you want to average the local momentum after each sync"
-        },
+        metadata={"help": "Specify whether you want to average the local momentum after each sync"}
     )
     distributed_world_size: int = II("distributed_training.distributed_world_size")
-
-
-
-
-
-@dataclass
-class EvalLMConfig(FairseqDataclass):
-    output_word_probs: bool = field(
-        default=False,
-        metadata={
-            "help": "if set, outputs words and their predicted log probabilities to standard output"
-        },
-    )
-    output_word_stats: bool = field(
-        default=False,
-        metadata={
-            "help": "if set, outputs word statistics such as word count, average probability, etc"
-        },
-    )
-    context_window: int = field(
-        default=0,
-        metadata={
-            "help": "ensures that every evaluated token has access to a context of at least this size, if possible"
-        },
-    )
-    softmax_batch: int = field(
-        default=sys.maxsize,
-        metadata={
-            "help": "if BxT is more than this, will batch the softmax over vocab to this amount of tokens, in order to fit into GPU memory"
-        },
-    )
-
-
 
 
 @dataclass

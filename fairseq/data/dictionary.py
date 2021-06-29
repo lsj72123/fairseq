@@ -280,7 +280,7 @@ class Dictionary:
             else:
                 idx = self.index(word)
             if consumer is not None:
-                consumer(word, idx) # here keeps all the unk tokens.
+                consumer(word, idx)  # here keeps all the unk tokens.
             ids[i] = idx
         if append_eos:
             ids[nwords] = self.eos()
@@ -365,16 +365,6 @@ class Dictionary:
                 self.symbols.append(word)
                 self.count.append(new_dict.count[idx2])
 
-
-
-
-
-
-
-
-
-
-
     def dummy_sentence(self, length):
         t = torch.Tensor(length).uniform_(self.nspecial + 1, len(self)).long()
         t[-1] = self.eos()
@@ -399,3 +389,48 @@ class TruncatedDictionary(object):
         if i < self.length:
             return self.wrapped_dict[i]
         return self.wrapped_dict.unk()
+
+
+# class BertCompressedDictionary(object):
+#     def __init__(self):
+#         pass
+#
+#     @classmethod
+#     def build_dictionary(self, filenames, parent_vocab):
+#         d = Dictionary(
+#             bos=parent_vocab.cls_word,
+#             pad=parent_vocab.pad_word,
+#             eos=parent_vocab.sep_word,
+#             unk=parent_vocab.unk_word,
+#         )
+#         for filename in filenames:
+#             self.add_file_to_dictionary(filename, d, parent_vocab, workers)
+#
+#     def add_file_to_dictionary(self, filename, dict, tokenize, num_workers):
+#         if num_workers > 1:
+#             pool = Pool(processes=num_workers)
+#             results = []
+#             for worker_id in range(num_workers):
+#                 results.append(
+#                     pool.apply_async(
+#                         self._add_file_to_dictionary_single_worker,
+#                         (filename, tokenize, dict.eos_word, worker_id, num_workers),
+#                     )
+#                 )
+#
+#         else:
+#             merge_result(self._add_file_to_dictionary_single_worker(filename, tokenize, dict.eos_word))
+#
+#     def _add_file_to_dictionary_single_worker(self, filename, tokenize, eos_word, word_id=0, num_workers=1):
+#         counter = Counter()
+#         with open(PathManager.get_local_path(filename), "r", encoding="utf-8") as f:
+#             size = os.fstat(f.fileno()).st_size
+#             chunk_size = size // num_workers
+#             offset = worker_id * chunk_size
+#             end = offset + chunk_size
+#             f.seek(offset)
+#             if offset > 0:
+#                 safe_readline(f)  # drop first incomplete line
+#             line = f.readline()
+#             while line:
+#                 for word in tokenize(line):

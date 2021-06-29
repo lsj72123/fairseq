@@ -59,7 +59,8 @@ def get_parser(desc, default_task="translation"):
     # in order to eagerly import custom tasks, optimizers, architectures, etc.
     usr_parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
     usr_parser.add_argument("--user-dir", default=None)  # user_dir is used to extend the fairseq task and model
-    usr_args, _ = usr_parser.parse_known_args()  # only parse the user_dir
+    # otherwise the user defined args will be parsed.
+    usr_args, _ = usr_parser.parse_known_args()
     utils.import_user_module(usr_args)
 
     parser = argparse.ArgumentParser(allow_abbrev=False)  # a new argparse
@@ -200,7 +201,7 @@ def add_preprocess_args(parser):
                        help="Generate joined dictionary")
     group.add_argument("--only-source", action="store_true",
                        help="Only process the source language")
-    group.add_argument("--padding-factor",default=8, type=int,
+    group.add_argument("--padding-factor", default=8, type=int,
                        metavar="N",
                        help="Pad dictionary size to be multiple of N")
     group.add_argument("--workers", default=1, type=int,
@@ -208,6 +209,10 @@ def add_preprocess_args(parser):
                        help="number of parallel workers")
     group.add_argument("--dict-only", action='store_true',
                        help="if true, only builds a dictionary and then exits")
+    parser.add_argument("--bert-model", default='',
+                        help="BERT model name")
+    parser.add_argument("--bert-model-dir", default='',
+                        help='Pretrained BERT model checkpoint directory')
     # fmt: on
     return parser
 
@@ -294,7 +299,7 @@ def parse_args_and_arch(
         from fairseq.tasks import TASK_REGISTRY
         TASK_REGISTRY[args.task].add_args(parser)
 
-    if getattr(args, "use_bmuf", False):    # global optimizer for parallel data
+    if getattr(args, "use_bmuf", False):  # global optimizer for parallel data
         # hack to support extra args for block distributed data parallelism
         from fairseq.optim.bmuf import FairseqBMUF
 
@@ -347,40 +352,13 @@ def parse_args_and_arch(
         args.no_seed_provided = False
 
     # Apply architecture configuration.
-    if hasattr(args, "arch")and args.arch in ARCH_CONFIG_REGISTRY:
+    if hasattr(args, "arch") and args.arch in ARCH_CONFIG_REGISTRY:
         ARCH_CONFIG_REGISTRY[args.arch](args)
 
     if parse_known:
         return args, extra
     else:
         return args
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def get_interactive_generation_parser(default_task="translation"):
@@ -404,19 +382,10 @@ def get_validation_parser(default_task=None):
     return parser
 
 
-
-
-
 def add_eval_lm_args(parser):
     group = parser.add_argument_group("LM Evaluation")
     add_common_eval_args(group)
     gen_parser_from_dataclass(group, EvalLMConfig())
-
-
-
-
-
-
 
 
 def get_args(

@@ -9,6 +9,7 @@ from collections import Counter
 import torch
 from fairseq.file_io import PathManager
 from fairseq.tokenizer import tokenize_line
+from fairseq.data.encoders.bert_wordpiece import BertTokenizer
 from typing import List, Dict
 
 
@@ -91,15 +92,6 @@ class Binarizer:
             "replaced": replaced,
         }
 
-
-
-
-
-
-
-
-
-
     @staticmethod
     def binarize_alignments(
             filename, alignment_parser, consumer, offset=0, end=-1
@@ -117,3 +109,64 @@ class Binarizer:
                 consumer(ids)
                 line = f.readline()
         return {"nseq": nseq}
+
+    @staticmethod
+    def binarize_bert(
+            filename, tokenizer, consumer, offset=0, end=-1,
+            append_eos=True, reverse_order=False, already_numberized=False,
+    ) -> Dict[str, int]:
+        nseq, ntok = 0, 0
+        replaced, used = Counter(), Counter()
+
+        def replaced_consumer(word, idx):  # contains all the OOV tokens that need to be replaced by NUK
+            if idx == tokenizer.unk_index and word != tokenizer.unk_word:
+                replaced.update([word])
+
+        def used_consumer(word):
+            used.update([word])
+
+        with open(PathManager.get_local_path(filename), "r", encoding="utf-8") as f:
+            f.seek(offset)
+            # next(f) breaks f.tell(), hence readline() must be used
+            line = safe_readline(f)
+            while line:
+                # f.tell() does not always give the byte position in the file
+                # sometimes it skips to a very large number
+                # it is unlikely that through a normal read we go from
+                # end bytes to end + 2**32 bytes (4 GB) and this makes it unlikely
+                # that the procedure breaks by the Nondeterministic behavior of
+                # f.tell()
+                if 0 < end < f.tell() < end + 2 ** 32:
+                    break
+                if already_numberized:
+                    id_strings = line.strip().split()
+                    id_list = [int(id_string) for id_string in id_strings]
+                    if reverse_order:
+                        id_list.reverse()
+                    if append_eos:
+                        id_list.append(tokenizer.eos())
+                    ids = torch.IntTensor(id_list)
+                else:
+                    line = '{} {} {}'.format('[CLS]', line.strip(), '[SEP]')
+                    tokenized_line = tokenizer.tokenize(line)
+                    if len(tokenized_line) > tokenizer.max_len:
+                        tokenized_line = tokenized_line[:tokenizer.max_len - 1]
+                        tokenized_line.append("[SEP]")  # make sure the last token is [SEP]
+                    words = tokenizer.convert_tokens_to_ids(tokenized_line)
+                    nwords = len(words)
+                    ids = torch.IntTensor(nwords)
+                    for i, word in enumerate(words):
+                        ids[i] = word
+                        replaced_consumer(tokenized_line[i], word)
+                        used_consumer((tokenized_line[i], word))
+                nseq += 1
+                ntok += len(ids)
+                consumer(ids)
+                line = f.readline()
+        return {
+            "nseq": nseq,
+            "nunk": sum(replaced.values()),
+            "ntok": ntok,
+            "replaced": replaced,
+            "used": used,
+        }

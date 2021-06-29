@@ -21,11 +21,12 @@ logging.basicConfig(
     level=os.environ.get("LOGLEVEL", "INFO").upper(),
     stream=sys.stdout,
 )
-logger = logging.getLogger("fairseq_cli.preprocess")
+logger = logging.getLogger("fairseq_cli.preprocess_bert")
 
 from fairseq import options, tasks, utils
 from fairseq.binarizer import Binarizer
 from fairseq.data import indexed_dataset
+from fairseq.data.encoders.bert_wordpiece import BertTokenizer
 
 
 def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, end):
@@ -62,7 +63,7 @@ def dataset_dest_prefix(args, output_prefix, lang):
     return "{}{}".format(base, lang_part)
 
 
-def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos=True):
+def binarize(args, filename, vocab, tokenize, output_prefix, lang, offset, end):
     ds = indexed_dataset.make_builder(
         dataset_dest_file(args, output_prefix, lang, "bin"),
         impl=args.dataset_impl,
@@ -73,7 +74,7 @@ def binarize(args, filename, vocab, output_prefix, lang, offset, end, append_eos
         ds.add_item(tensor)
 
     res = Binarizer.binarize(
-        filename, vocab, consumer, append_eos=append_eos, offset=offset, end=end
+        filename, vocab, consumer, tokenize=tokenize, offset=offset, end=end
     )
     ds.finalize(dataset_dest_file(args, output_prefix, lang, "idx"))
     return res
@@ -90,15 +91,17 @@ def main(args):
 
     logger.addHandler(
         logging.FileHandler(
-            filename=os.path.join(args.destdir, "preprocess.log"),
+            filename=os.path.join(args.destdir, "preprocess.log"), mode='w'
         )
     )
     logger.info(args)
 
+    assert args.task == 'translation_from_pretrained_bert', \
+        "preprocess_bert only support translation_from_pretrained_bert task"
     task = tasks.get_task(args.task)
 
     def train_path(lang):
-        return "{}{}".format(args.trainpref, ("." + lang) if lang else "")
+        return "{}.bert{}".format(args.trainpref, ("." + lang) if lang else "")
 
     def file_name(prefix, lang):
         fname = prefix
@@ -112,7 +115,7 @@ def main(args):
     def dict_path(lang):
         return dest_path("dict", lang) + ".txt"
 
-    def build_dictionary(filenames, src=False, tgt=False):
+    def build_dictionary(filenames, tokenizer, src=False, tgt=False):
         assert src ^ tgt
         return task.build_dictionary(
             filenames,
@@ -120,6 +123,7 @@ def main(args):
             threshold=args.thresholdsrc if src else args.thresholdtgt,
             nwords=args.nwordssrc if src else args.nwordstgt,
             padding_factor=args.padding_factor,
+            tokenizer=tokenizer
         )
 
     target = not args.only_source
@@ -129,6 +133,13 @@ def main(args):
 
     if target and not args.tgtdict and os.path.exists(dict_path(args.target_lang)):
         raise FileExistsError(dict_path(args.target_lang))
+
+    if args.bert_model != "":
+        pretrained_model_name_or_path = args.bert_model
+    else:
+        assert args.bert_model_dir != "", "--bert-model-dir must be set if --bert-model is not specified"
+        pretrained_model_name_or_path = args.bert_model_dir
+    tokenizer = BertTokenizer.from_pretrained(pretrained_model_name_or_path)
 
     if args.joined_dictionary:
         assert (
@@ -143,7 +154,7 @@ def main(args):
             assert args.trainpref, "--trainpref must be set if --srcdict is not specified"
             src_dict = build_dictionary(
                 {train_path(lang) for lang in [args.source_lang, args.target_lang]},
-                src=True,
+                src=True, tokenizer=tokenizer
             )
         tgt_dict = src_dict
     else:
@@ -151,14 +162,14 @@ def main(args):
             src_dict = task.load_dictionary(args.srcdict)
         else:
             assert args.trainpref, "--trainpref must be set if --srcdict is not specified"
-            src_dict = build_dictionary([train_path(args.source_lang)], src=True)
+            src_dict = build_dictionary([train_path(args.source_lang)], src=True, tokenizer=tokenizer)
 
         if target:
             if args.tgtdict:
                 tgt_dict = task.load_dictionary(args.tgtdict)
             else:
                 assert args.trainpref, "--trainpref must be set if --tgtdict is not specified"
-                tgt_dict = build_dictionary([train_path(args.target_lang)], tgt=True)
+                tgt_dict = build_dictionary([train_path(args.target_lang)], tgt=True, tokenizer=tokenizer)
         else:
             tgt_dict = None
 
@@ -242,7 +253,7 @@ def main(args):
                 num_workers=args.workers,
             )
 
-    def make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers):
+    def make_binary_dataset(vocab, tokenize, input_prefix, output_prefix, lang, num_workers):
         logger.info("[{}] Dictionary: {} types".format(lang, len(vocab)))
         n_seq_tok = [0, 0]
         replaced = Counter()
@@ -265,6 +276,7 @@ def main(args):
                         args,
                         input_file,
                         vocab,
+                        tokenize,
                         prefix,
                         lang,
                         offsets[worker_id],
@@ -281,7 +293,7 @@ def main(args):
         )
         merge_result(
             Binarizer.binarize(
-                input_file, vocab, lambda t: ds.add_item(t), offset=0, end=offsets[1]
+                input_file, vocab, lambda t: ds.add_item(t), tokenize=tokenize, offset=0, end=offsets[1]
             )
         )
         if num_workers > 1:
@@ -306,7 +318,7 @@ def main(args):
             )
         )
 
-    def make_dataset(vocab, input_prefix, output_prefix, lang, num_workers=1):
+    def make_dataset(vocab, tokenize, input_prefix, output_prefix, lang, num_workers=1):
         if args.dataset_impl == "raw":
             # Copy original text file to destination folder
             output_text_file = dest_path(
@@ -315,25 +327,31 @@ def main(args):
             )
             shutil.copyfile(file_name(input_prefix, lang), output_text_file)
         else:
-            make_binary_dataset(vocab, input_prefix, output_prefix, lang, num_workers)
+            make_binary_dataset(vocab, tokenize, input_prefix, output_prefix, lang, num_workers)
 
-    def make_all(lang, vocab):  # make train, valid and text dataset
+    def make_all(lang, vocab, tokenize):  # make train, valid and text dataset
         if args.trainpref:
-            make_dataset(vocab, args.trainpref, "train", lang, num_workers=args.workers)
+            make_dataset(vocab, tokenize, f"{args.trainpref}.bert", "train.bert", lang, num_workers=args.workers)
 
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
                 outprefix = "valid{}".format(k) if k > 0 else "valid"
-                make_dataset(vocab, validpref, outprefix, lang, num_workers=args.workers)
+                make_dataset(vocab, tokenize,
+                             f"{validpref}.bert",
+                             f"{outprefix}.bert",
+                             lang, num_workers=args.workers)
 
         if args.testpref:
             for k, testpref in enumerate(args.testpref.split(",")):
                 outprefix = "test{}".format(k) if k > 0 else "test"
-                make_dataset(vocab, testpref, outprefix, lang, num_workers=args.workers)
+                make_dataset(vocab, tokenize,
+                             f"{testpref}.bert",
+                             f"{outprefix}.bert",
+                             lang, num_workers=args.workers)
 
-    make_all(args.source_lang, src_dict)
+    make_all(args.source_lang, src_dict, tokenizer.tokenize)
     if target:
-        make_all(args.target_lang, tgt_dict)
+        make_all(args.target_lang, tgt_dict, tokenizer.tokenize)
 
     if args.align_suffix:
         make_all_alignments()

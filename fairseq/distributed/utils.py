@@ -111,23 +111,6 @@ def is_master(cfg: DistributedTrainingConfig):
     return cfg.distributed_rank == 0
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def _pipeline_parallel_pre_init(cfg: DistributedTrainingConfig):
     from fairseq import utils
 
@@ -293,9 +276,6 @@ def _infer_single_node_init(cfg: DistributedTrainingConfig):
     cfg.distributed_init_method = "tcp://localhost:{port}".format(port=port)
 
 
-
-
-
 def distributed_init(cfg: FairseqConfig):
     if isinstance(cfg, Namespace):
         from fairseq.dataclass.utils import convert_namespace_to_omegaconf
@@ -389,6 +369,56 @@ def distributed_main(i, main, cfg: FairseqConfig, kwargs):
         torch.distributed.barrier(get_global_group())
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 def all_reduce(tensor, group, op="sum"):
     if use_xla():
         assert isinstance(group, tuple) and group[0] == "tpu"
@@ -405,49 +435,12 @@ def all_reduce(tensor, group, op="sum"):
         return tensor
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def use_xla():
     global _USE_XLA
     return _USE_XLA
+
+
+
 
 
 def new_groups(grouped_ranks: List[List[int]]):

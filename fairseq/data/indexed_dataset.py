@@ -17,7 +17,6 @@ from . import FairseqDataset
 
 from typing import Union, Type
 
-
 _code_to_dtype = {
     1: np.uint8,
     2: np.int8,
@@ -135,6 +134,31 @@ def get_indexed_dataset_to_local(path) -> str:
     return local_path
 
 
+def best_fitting_int_dtype(
+        max_int_to_represent,
+) -> Type[Union[np.uint16, np.uint32, np.int64]]:
+    if max_int_to_represent is None:
+        return np.uint32  # Safe guess
+    elif max_int_to_represent < 65500:
+        return np.uint16
+    elif max_int_to_represent < 4294967295:
+        return np.uint32
+    else:
+        return np.int64
+        # we avoid np.uint64 because it doesn't save space and its type promotion behaves unexpectedly
+        # https://github.com/numpy/numpy/issues/5745
+
+
+def read_longs(f, n):
+    a = np.empty(n, dtype=np.int64)
+    f.readinto(a)
+    return a
+
+
+def write_longs(f, a):
+    f.write(np.array(a, dtype=np.int64))
+
+
 class IndexedRawTextDataset(FairseqDataset):
     """Takes a text file as input and binarizes it in memory at instantiation.
     Original lines are also kept in memory"""
@@ -166,14 +190,6 @@ class IndexedRawTextDataset(FairseqDataset):
                 self.sizes.append(len(tokens))
 
         self.sizes = np.array(self.sizes)
-
-
-
-
-
-
-
-
 
     def check_index(self, i):
         if i < 0 or i >= self.size:
@@ -211,14 +227,6 @@ class IndexedDataset(FairseqDataset):
         return PathManager.exists(index_file_path(path)) and PathManager.exists(
             data_file_path(path)
         )
-
-
-
-
-
-
-
-
 
     def __init__(self, path, fix_lua_indexing=False):
         super().__init__()
@@ -259,7 +267,7 @@ class IndexedDataset(FairseqDataset):
         if not self.data_file:
             self.read_data(self.path)
         self.check_index(i)
-        tensor_size = self.sizes[self.dim_offsets[i] : self.dim_offsets[i + 1]]
+        tensor_size = self.sizes[self.dim_offsets[i]: self.dim_offsets[i + 1]]
         a = np.empty(tensor_size, dtype=self.dtype)
         self.data_file.seek(self.data_offsets[i] * self.element_size)
         self.data_file.readinto(a)
@@ -276,8 +284,6 @@ class IndexedDataset(FairseqDataset):
 
     def size(self, index):
         return self.sizes[index]
-
-
 
     @property
     def supports_prefetch(self):
@@ -424,17 +430,11 @@ class MMapIndexedDataset(torch.utils.data.Dataset):
     def supports_prefetch(self):
         return False
 
-
-
-
     def __getstate__(self):
         return self._path
 
     def __setstate__(self, state):
         self._do_init(state)
-
-
-
 
     @lru_cache(maxsize=8)
     def __getitem__(self, i):
@@ -446,12 +446,6 @@ class MMapIndexedDataset(torch.utils.data.Dataset):
             np_array = np_array.astype(np.int64)
 
         return torch.from_numpy(np_array)
-
-
-
-
-
-
 
 
 class MMapIndexedDatasetBuilder:
@@ -470,7 +464,7 @@ class MMapIndexedDatasetBuilder:
         self._data_file.close()
 
         with MMapIndexedDataset.Index.writer(index_file, self._dtype) as index:
-            index.write(self._sizes)    # contains all the line size in a text file.
+            index.write(self._sizes)  # contains all the line size in a text file.
 
     def merge_file_(self, another_file):
         # Concatenate index
@@ -483,25 +477,6 @@ class MMapIndexedDatasetBuilder:
         # Concatenate data
         with open(data_file_path(another_file), "rb") as f:
             shutil.copyfileobj(f, self._data_file)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 class IndexedDatasetBuilder:
@@ -566,106 +541,6 @@ class IndexedDatasetBuilder:
         index.close()
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-def best_fitting_int_dtype(
-    max_int_to_represent,
-) -> Type[Union[np.uint16, np.uint32, np.int64]]:
-
-    if max_int_to_represent is None:
-        return np.uint32  # Safe guess
-    elif max_int_to_represent < 65500:
-        return np.uint16
-    elif max_int_to_represent < 4294967295:
-        return np.uint32
-    else:
-        return np.int64
-        # we avoid np.uint64 because it doesn't save space and its type promotion behaves unexpectedly
-        # https://github.com/numpy/numpy/issues/5745
-
-
-
-
-
-
-
-
-def read_longs(f, n):
-    a = np.empty(n, dtype=np.int64)
-    f.readinto(a)
-    return a
-
-
-def write_longs(f, a):
-    f.write(np.array(a, dtype=np.int64))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class IndexedCachedDataset(IndexedDataset):
     def __init__(self, path, fix_lua_indexing=False):
         super().__init__(path, fix_lua_indexing=fix_lua_indexing)
@@ -691,7 +566,7 @@ class IndexedCachedDataset(IndexedDataset):
         for i in indices:
             self.cache_index[i] = ptx
             size = self.data_offsets[i + 1] - self.data_offsets[i]
-            a = self.cache[ptx : ptx + size]
+            a = self.cache[ptx: ptx + size]
             self.data_file.seek(self.data_offsets[i] * self.element_size)
             self.data_file.readinto(a)
             ptx += size
@@ -703,29 +578,11 @@ class IndexedCachedDataset(IndexedDataset):
     @lru_cache(maxsize=8)
     def __getitem__(self, i):
         self.check_index(i)
-        tensor_size = self.sizes[self.dim_offsets[i] : self.dim_offsets[i + 1]]
+        tensor_size = self.sizes[self.dim_offsets[i]: self.dim_offsets[i + 1]]
         a = np.empty(tensor_size, dtype=self.dtype)
         ptx = self.cache_index[i]
-        np.copyto(a, self.cache[ptx : ptx + a.size])
+        np.copyto(a, self.cache[ptx: ptx + a.size])
         item = torch.from_numpy(a).long()
         if self.fix_lua_indexing:
             item -= 1  # subtract 1 for 0-based indexing
         return item
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
