@@ -2,9 +2,10 @@ from multiprocessing import Pool
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Optional
+from transformers import BertTokenizer
+
 from fairseq import tokenizer
 from fairseq.data import Dictionary
-from fairseq.data.encoders.bert_wordpiece import BertTokenizer
 from fairseq.file_io import PathManager
 from . import register_task
 from .translation import TranslationTask, TranslationConfig
@@ -30,10 +31,10 @@ class TranslationFromPretrainedBERTTask(TranslationTask):
     def build_dictionary(cls, filenames, tokenizer, workers=1, threshold=-1, nwords=-1, padding_factor=8):
         assert isinstance(tokenizer, BertTokenizer)
         d = Dictionary(
-            bos=tokenizer.cls_word,
-            pad=tokenizer.pad_word,
-            eos=tokenizer.sep_word,
-            unk=tokenizer.unk_word,
+            bos=tokenizer.cls_token,
+            pad=tokenizer.pad_token,
+            eos=tokenizer.sep_token,
+            unk=tokenizer.unk_token,
         )
         for filename in filenames:
             Dictionary.add_file_to_dictionary(

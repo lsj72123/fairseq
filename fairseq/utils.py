@@ -379,6 +379,17 @@ def reset_logging():
     root.addHandler(handler)
 
 
+def item(tensor):
+    # tpu-comment: making this a no-op for xla devices.
+    if torch.is_tensor(tensor) and tensor.device.type == "xla":
+        return tensor.detach()
+    if hasattr(tensor, "item"):
+        return tensor.item()
+    if hasattr(tensor, "__getitem__"):
+        return tensor[0]
+    return tensor
+
+
 class set_torch_seed(object):
     def __init__(self, seed):
         assert isinstance(seed, int)
@@ -678,15 +689,7 @@ def buffered_arange(max):
 
 
 
-def item(tensor):
-    # tpu-comment: making this a no-op for xla devices.
-    if torch.is_tensor(tensor) and tensor.device.type == "xla":
-        return tensor.detach()
-    if hasattr(tensor, "item"):
-        return tensor.item()
-    if hasattr(tensor, "__getitem__"):
-        return tensor[0]
-    return tensor
+
 
 
 def multi_tensor_total_norm(grads, chunk_size=2048 * 32) -> torch.Tensor:

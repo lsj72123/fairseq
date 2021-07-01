@@ -9,7 +9,6 @@ from collections import Counter
 import torch
 from fairseq.file_io import PathManager
 from fairseq.tokenizer import tokenize_line
-from fairseq.data.encoders.bert_wordpiece import BertTokenizer
 from typing import List, Dict
 
 

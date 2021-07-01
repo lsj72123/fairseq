@@ -14,9 +14,6 @@ class SpaceTokenizer(object):
     def __init__(self, *unused):
         self.space_tok = re.compile(r"\s+")  # at least one space char
 
-
-
-
     def encode(self, x: str) -> str:
         return self.space_tok.sub(" ", x)
 

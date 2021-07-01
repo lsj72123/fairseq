@@ -248,19 +248,17 @@ def _main(cfg: DictConfig):
                 if not cfg.common_eval.quiet:
                     score = hypo["score"] / math.log(2)  # convert to base 2
                     # original hypothesis (after tokenization and BPE)
-                    logger.info("H-{}\t{}\t{}".format(sample_id, score, hypo_str))
+                    logger.info("H-{}\t{}\t{}".format(sample_id, hypo_str, score))
 
                     # detokenized hypothesis
-                    logger.info("D-{}\t{}\t{}".format(sample_id, score, detok_hypo_str))
+                    logger.info("D-{}\t{}\t{}".format(sample_id, detok_hypo_str, score))
                     logger.info("P-{}\t{}".format(
                         sample_id,
                         " ".join(
                             map(
                                 lambda x: "{:.4f}".format(x),
                                 # convert from base e to base 2
-                                hypo["positional_scores"]
-                                    .div_(math.log(2))
-                                    .tolist(),
+                                hypo["positional_scores"].div_(math.log(2)).tolist(),
                             )
                         ),
                     ))
@@ -356,12 +354,11 @@ def main(cfg: DictConfig):
         cfg = convert_namespace_to_omegaconf(cfg)
 
     assert cfg.common_eval.path is not None, "--path required for generation!"
-    assert (
-            not cfg.generation.sampling or cfg.generation.nbest == cfg.generation.beam
-    ), "--sampling requires --nbest to be equal to --beam"
-    assert (
-            cfg.generation.replace_unk is None or cfg.dataset.dataset_impl == "raw"
-    ), "--replace-unk requires a raw text dataset (--dataset-impl=raw)"
+    assert not cfg.generation.sampling or cfg.generation.nbest == cfg.generation.beam, \
+        "--sampling requires --nbest to be equal to --beam"
+
+    assert cfg.generation.replace_unk is None or cfg.dataset.dataset_impl == "raw", \
+        "--replace-unk requires a raw text dataset (--dataset-impl=raw)"
 
     if cfg.common_eval.results_path is not None:
         os.makedirs(cfg.common_eval.results_path, exist_ok=True)

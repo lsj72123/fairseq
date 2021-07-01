@@ -480,17 +480,6 @@ class TranslationTask(FairseqTask):
         else:
             return sacrebleu.corpus_bleu(hyps, [refs])
 
-
-
-
-
-
-
-
-
-
-
-
     def build_dataset_for_inference(self, src_tokens, src_lengths, constraints=None):
         return LanguagePairDataset(
             src_tokens,
@@ -499,5 +488,3 @@ class TranslationTask(FairseqTask):
             tgt_dict=self.target_dictionary,
             constraints=constraints,
         )
-
-

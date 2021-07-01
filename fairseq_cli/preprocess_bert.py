@@ -14,6 +14,7 @@ import sys
 from collections import Counter
 from itertools import zip_longest
 from multiprocessing import Pool
+from transformers import BertTokenizer
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -26,7 +27,6 @@ logger = logging.getLogger("fairseq_cli.preprocess_bert")
 from fairseq import options, tasks, utils
 from fairseq.binarizer import Binarizer
 from fairseq.data import indexed_dataset
-from fairseq.data.encoders.bert_wordpiece import BertTokenizer
 
 
 def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, end):
@@ -139,7 +139,7 @@ def main(args):
     else:
         assert args.bert_model_dir != "", "--bert-model-dir must be set if --bert-model is not specified"
         pretrained_model_name_or_path = args.bert_model_dir
-    tokenizer = BertTokenizer.from_pretrained(pretrained_model_name_or_path)
+    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
 
     if args.joined_dictionary:
         assert (

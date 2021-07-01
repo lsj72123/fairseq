@@ -46,5 +46,6 @@ class BertBPE(object):
             self.bert_tokenizer.convert_tokens_to_string(x.split(" "))
         )
 
-    def is_beginning_of_word(self, x: str) -> bool:
+    @staticmethod
+    def is_beginning_of_word(x: str) -> bool:
         return not x.startswith("##")

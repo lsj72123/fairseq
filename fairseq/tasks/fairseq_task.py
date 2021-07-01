@@ -17,12 +17,10 @@ from fairseq.dataclass.utils import gen_parser_from_dataclass
 from fairseq.optim.amp_optimizer import AMPOptimizer
 from omegaconf import DictConfig
 
-
 logger = logging.getLogger(__name__)
 
 
 class StatefulContainer(object):
-
     _state: Dict[str, Any] = dict()
     _factories: Dict[str, Callable[[], Any]] = dict()
 
@@ -131,7 +129,7 @@ class FairseqTask(object):
                         seq_gen_cls=None,
                         extra_gen_cls_kwargs=None,
                         prefix_allowed_tokens_fn=None,
-    ):
+                        ):
         """
         Build a :class:`~fairseq.SequenceGenerator` instance for this
         task.
@@ -186,16 +184,16 @@ class FairseqTask(object):
         if prefix_allowed_tokens_fn is None:
             prefix_allowed_tokens_fn = getattr(args, "prefix_allowed_tokens_fn", None)
         if (
-            sum(
-                int(cond)
-                for cond in [
-                    sampling,
-                    diverse_beam_groups > 0,
-                    match_source_len,
-                    diversity_rate > 0,
-                ]
-            )
-            > 1
+                sum(
+                    int(cond)
+                    for cond in [
+                        sampling,
+                        diverse_beam_groups > 0,
+                        match_source_len,
+                        diversity_rate > 0,
+                    ]
+                )
+                > 1
         ):
             raise ValueError("Provided Search parameters are mutually exclusive.")
         assert sampling_topk < 0 or sampling, "--sampling-topk requires --sampling"
@@ -278,11 +276,11 @@ class FairseqTask(object):
         return criterions.build_criterion(cfg, self)
 
     def load_dataset(
-        self,
-        split: str,
-        combine: bool = False,
-        task_cfg: FairseqDataclass = None,
-        **kwargs
+            self,
+            split: str,
+            combine: bool = False,
+            task_cfg: FairseqDataclass = None,
+            **kwargs
     ):
         """Load a given dataset split.
 
@@ -330,20 +328,20 @@ class FairseqTask(object):
         return getattr(dataset, "can_reuse_epoch_itr_across_epochs", False)
 
     def get_batch_iterator(
-        self,
-        dataset,
-        max_tokens=None,
-        max_sentences=None,
-        max_positions=None,
-        ignore_invalid_inputs=False,
-        required_batch_size_multiple=1,
-        seed=1,
-        num_shards=1,
-        shard_id=0,
-        num_workers=0,
-        epoch=1,
-        data_buffer_size=0,
-        disable_iterator_cache=False,
+            self,
+            dataset,
+            max_tokens=None,
+            max_sentences=None,
+            max_positions=None,
+            ignore_invalid_inputs=False,
+            required_batch_size_multiple=1,
+            seed=1,
+            num_shards=1,
+            shard_id=0,
+            num_workers=0,
+            epoch=1,
+            data_buffer_size=0,
+            disable_iterator_cache=False,
     ):
         """
         Get an iterator that yields batches of data from the given dataset.
@@ -427,7 +425,7 @@ class FairseqTask(object):
         return epoch_iter
 
     def filter_indices_by_size(
-        self, indices, dataset, max_positions=None, ignore_invalid_inputs=False
+            self, indices, dataset, max_positions=None, ignore_invalid_inputs=False
     ):
         """
         Filter examples that are too large
@@ -465,7 +463,7 @@ class FairseqTask(object):
         pass
 
     def train_step(
-        self, sample, model, criterion, optimizer, update_num, ignore_grad=False
+            self, sample, model, criterion, optimizer, update_num, ignore_grad=False
     ):
         """
         Do forward and backward, and return the loss as computed by *criterion*
@@ -523,7 +521,7 @@ class FairseqTask(object):
                 "ntokens not found in Criterion logging outputs, cannot log wpb or wps"
             )
         else:
-            ntokens = sum(log.get("ntokens", 0) for log in logging_outputs) # ntokens is the all tokens so far
+            ntokens = sum(log.get("ntokens", 0) for log in logging_outputs)  # ntokens is the all tokens so far
             metrics.log_scalar("wpb", ntokens, priority=180, round=1)
             metrics.log_speed("wps", ntokens, priority=90, round=1)
 
@@ -548,7 +546,7 @@ class FairseqTask(object):
         return loss, sample_size, logging_output
 
     def inference_step(
-        self, generator, models, sample, prefix_tokens=None, constraints=None
+            self, generator, models, sample, prefix_tokens=None, constraints=None
     ):
         with torch.no_grad():
             return generator.generate(
@@ -594,19 +592,10 @@ class FairseqTask(object):
         """Build the tokenizer for this task."""
         return encoders.build_bpe(args)
 
-
-
-    @staticmethod
-    def logging_outputs_can_be_summed(criterion) -> bool:
-        """
-        Whether the logging outputs returned by `train_step` and `valid_step` can
-        be summed across workers prior to calling `aggregate_logging_outputs`.
-        Setting this to True will improves distributed training speed.
-        """
-        return criterion.logging_outputs_can_be_summed()
-
-
-
+    def build_dataset_for_inference(
+            self, src_tokens: List[torch.Tensor], src_lengths: List[int], **kwargs
+    ) -> torch.utils.data.Dataset:
+        raise NotImplementedError
 
     def aggregate_logging_outputs(self, logging_outputs, criterion):
         """[deprecated] Aggregate logging outputs from data parallel training."""
@@ -618,16 +607,14 @@ class FairseqTask(object):
             self.reduce_metrics(logging_outputs, criterion)
             return agg.get_smoothed_values()
 
-
-    def build_dataset_for_inference(
-        self, src_tokens: List[torch.Tensor], src_lengths: List[int], **kwargs
-    ) -> torch.utils.data.Dataset:
-        raise NotImplementedError
-
-
-
-
-
+    @staticmethod
+    def logging_outputs_can_be_summed(criterion) -> bool:
+        """
+        Whether the logging outputs returned by `train_step` and `valid_step` can
+        be summed across workers prior to calling `aggregate_logging_outputs`.
+        Setting this to True will improves distributed training speed.
+        """
+        return criterion.logging_outputs_can_be_summed()
 
     def get_interactive_tokens_and_lengths(self, lines, encode_fn):
         tokens = [
@@ -640,11 +627,8 @@ class FairseqTask(object):
         return tokens, lengths
 
 
-
-
-
 class LegacyFairseqTask(FairseqTask):
-    def __init__(self, args: Namespace):
+    def __init__(self, args: Namespace, **kwargs):
         self.args = args
         self.datasets = {}
         self.dataset_to_epoch_iter = {}
