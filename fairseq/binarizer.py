@@ -50,6 +50,7 @@ class Binarizer:
             if idx == dict.unk_index and word != dict.unk_word:
                 replaced.update([word])
 
+        max_len = 0
         with open(PathManager.get_local_path(filename), "r", encoding="utf-8") as f:
             f.seek(offset)
             # next(f) breaks f.tell(), hence readline() must be used
@@ -84,6 +85,7 @@ class Binarizer:
                 ntok += len(ids)
                 consumer(ids)
                 line = f.readline()
+                max_len = max(max_len, len(ids))
         return {
             "nseq": nseq,
             "nunk": sum(replaced.values()),

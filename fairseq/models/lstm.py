@@ -19,7 +19,6 @@ from fairseq.models import (
 from fairseq.modules import AdaptiveSoftmax, FairseqDropout
 from torch import Tensor
 
-
 DEFAULT_MAX_SOURCE_POSITIONS = 1e5
 DEFAULT_MAX_TARGET_POSITIONS = 1e5
 
@@ -216,11 +215,11 @@ class LSTMModel(FairseqEncoderDecoderModel):
         super().__init__(encoder, decoder)
 
     def forward(
-        self,
-        src_tokens,
-        src_lengths,
-        prev_output_tokens,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
+            self,
+            src_tokens,
+            src_lengths,
+            prev_output_tokens,
+            incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
     ):
         encoder_out = self.encoder(src_tokens, src_lengths=src_lengths)
         decoder_out = self.decoder(
@@ -235,18 +234,18 @@ class LSTMEncoder(FairseqEncoder):
     """LSTM encoder."""
 
     def __init__(
-        self,
-        dictionary,
-        embed_dim=512,
-        hidden_size=512,
-        num_layers=1,
-        dropout_in=0.1,
-        dropout_out=0.1,
-        bidirectional=False,
-        left_pad=True,
-        pretrained_embed=None,
-        padding_idx=None,
-        max_source_positions=DEFAULT_MAX_SOURCE_POSITIONS,
+            self,
+            dictionary,
+            embed_dim=512,
+            hidden_size=512,
+            num_layers=1,
+            dropout_in=0.1,
+            dropout_out=0.1,
+            bidirectional=False,
+            left_pad=True,
+            pretrained_embed=None,
+            padding_idx=None,
+            max_source_positions=DEFAULT_MAX_SOURCE_POSITIONS,
     ):
         super().__init__(dictionary)
         self.num_layers = num_layers
@@ -281,10 +280,10 @@ class LSTMEncoder(FairseqEncoder):
             self.output_units *= 2
 
     def forward(
-        self,
-        src_tokens: Tensor,
-        src_lengths: Tensor = None,
-        enforce_sorted: bool = True,
+            self,
+            src_tokens: Tensor,
+            src_lengths: Tensor = None,
+            enforce_sorted: bool = True,
     ):
         """
         Args:
@@ -374,21 +373,21 @@ class LSTMDecoder(FairseqIncrementalDecoder):
     """LSTM decoder."""
 
     def __init__(
-        self,
-        dictionary,
-        embed_dim=512,
-        hidden_size=512,
-        out_embed_dim=512,
-        num_layers=1,
-        dropout_in=0.1,
-        dropout_out=0.1,
-        attention=True,
-        encoder_output_units=512,
-        pretrained_embed=None,
-        share_input_output_embed=False,
-        adaptive_softmax_cutoff=None,
-        max_target_positions=DEFAULT_MAX_TARGET_POSITIONS,
-        residuals=False,    # notice that we can add residuals in decoder
+            self,
+            dictionary,
+            embed_dim=512,
+            hidden_size=512,
+            out_embed_dim=512,
+            num_layers=1,
+            dropout_in=0.1,
+            dropout_out=0.1,
+            attention=True,
+            encoder_output_units=512,
+            pretrained_embed=None,
+            share_input_output_embed=False,
+            adaptive_softmax_cutoff=None,
+            max_target_positions=DEFAULT_MAX_TARGET_POSITIONS,
+            residuals=False,  # notice that we can add residuals in decoder
     ):
         super().__init__(dictionary)
         self.dropout_in_module = FairseqDropout(
@@ -424,7 +423,7 @@ class LSTMDecoder(FairseqIncrementalDecoder):
         input_feed_size = 0 if encoder_output_units == 0 else hidden_size
         self.layers = nn.ModuleList(
             [
-                LSTMCell(   # the input of the bottom layer is the concat of embedding and encoder output
+                LSTMCell(  # the input of the bottom layer is the concat of embedding and encoder output
                     input_size=input_feed_size + embed_dim
                     if layer == 0
                     else hidden_size,
@@ -461,11 +460,11 @@ class LSTMDecoder(FairseqIncrementalDecoder):
         return self.max_target_positions
 
     def forward(
-        self,
-        prev_output_tokens,
-        encoder_out: Optional[Tuple[Tensor, Tensor, Tensor, Tensor]] = None,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        src_lengths: Optional[Tensor] = None,
+            self,
+            prev_output_tokens,
+            encoder_out: Optional[Tuple[Tensor, Tensor, Tensor, Tensor]] = None,
+            incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
+            src_lengths: Optional[Tensor] = None,
     ):
         x, attn_scores = self.extract_features(
             prev_output_tokens, encoder_out, incremental_state
@@ -473,11 +472,11 @@ class LSTMDecoder(FairseqIncrementalDecoder):
         return self.output_layer(x), attn_scores
 
     def extract_features(
-        self,
-        prev_output_tokens,
-        encoder_out: Optional[Tuple[Tensor, Tensor, Tensor, Tensor]] = None,
-        incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
-        **kwargs
+            self,
+            prev_output_tokens,
+            encoder_out: Optional[Tuple[Tensor, Tensor, Tensor, Tensor]] = None,
+            incremental_state: Optional[Dict[str, Dict[str, Optional[Tensor]]]] = None,
+            **kwargs
     ):
         """
         Similar to *forward* but only return features.
@@ -528,7 +527,7 @@ class LSTMDecoder(FairseqIncrementalDecoder):
             input_feed = None
 
         assert (
-            srclen > 0 or self.attention is None
+                srclen > 0 or self.attention is None
         ), "attention is not supported if there are no encoder outputs"
         attn_scores: Optional[Tensor] = (
             x.new_zeros(srclen, seqlen, bsz) if self.attention is not None else None
@@ -599,7 +598,7 @@ class LSTMDecoder(FairseqIncrementalDecoder):
             attn_scores = attn_scores.transpose(0, 2)
         else:
             attn_scores = None
-        return x, attn_scores   # training stage will not return attn_score
+        return x, attn_scores  # training stage will not return attn_score
 
     def output_layer(self, x, **kwargs):
         """Project features to the vocabulary size."""
@@ -611,8 +610,8 @@ class LSTMDecoder(FairseqIncrementalDecoder):
         return x
 
     def get_cached_state(
-        self,
-        incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
+            self,
+            incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
     ) -> Tuple[List[Tensor], List[Tensor], Optional[Tensor]]:
         cached_state = self.get_incremental_state(incremental_state, "cached_state")
         assert cached_state is not None
@@ -628,9 +627,9 @@ class LSTMDecoder(FairseqIncrementalDecoder):
         return prev_hiddens, prev_cells, input_feed
 
     def reorder_incremental_state(
-        self,
-        incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
-        new_order: Tensor,
+            self,
+            incremental_state: Dict[str, Dict[str, Optional[Tensor]]],
+            new_order: Tensor,
     ):
         if incremental_state is None or len(incremental_state) == 0:
             return
@@ -677,8 +676,8 @@ class AttentionLayer(nn.Module):
         if encoder_padding_mask is not None:
             attn_scores = (
                 attn_scores.float()
-                .masked_fill_(encoder_padding_mask, float("-inf"))
-                .type_as(attn_scores)
+                    .masked_fill_(encoder_padding_mask, float("-inf"))
+                    .type_as(attn_scores)
             )  # FP16 support: cast to float and back
 
         attn_scores = F.softmax(attn_scores, dim=0)  # srclen x bsz
@@ -727,7 +726,7 @@ def tfot_iwslt2015_en_vi(args):
     args.decoder_layers = getattr(args, 'decoder_layers', 2)
     args.decoder_out_embed_dim = getattr(args, 'decoder_out_embed_dim', args.decoder_embed_dim)
     args.decoder_attention = getattr(args, "decoder_attention", "1")
-    args.share_decoder_input_output_embed = getattr(args, "share_decoder_input_output_embed", False)
+    args.share_decoder_input_output_embed = getattr(args, "share_decoder_input_output_embed", True)
 
 
 @register_model_architecture("lstm", "lstm_wiseman_iwslt_de_en")

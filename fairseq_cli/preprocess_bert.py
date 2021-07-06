@@ -27,6 +27,7 @@ logger = logging.getLogger("fairseq_cli.preprocess_bert")
 from fairseq import options, tasks, utils
 from fairseq.binarizer import Binarizer
 from fairseq.data import indexed_dataset
+from fairseq.tasks.translation_from_pretrained_bert import BERT_CACHE_DIR
 
 
 def binarize_alignments(args, filename, parse_alignment, output_prefix, offset, end):
@@ -123,7 +124,7 @@ def main(args):
             threshold=args.thresholdsrc if src else args.thresholdtgt,
             nwords=args.nwordssrc if src else args.nwordstgt,
             padding_factor=args.padding_factor,
-            tokenizer=tokenizer
+            bert_tokenizer=tokenizer
         )
 
     target = not args.only_source
@@ -134,12 +135,7 @@ def main(args):
     if target and not args.tgtdict and os.path.exists(dict_path(args.target_lang)):
         raise FileExistsError(dict_path(args.target_lang))
 
-    if args.bert_model != "":
-        pretrained_model_name_or_path = args.bert_model
-    else:
-        assert args.bert_model_dir != "", "--bert-model-dir must be set if --bert-model is not specified"
-        pretrained_model_name_or_path = args.bert_model_dir
-    tokenizer = BertTokenizer.from_pretrained('bert-base-multilingual-cased')
+    tokenizer = BertTokenizer.from_pretrained(args.bert_model, cache_dir=BERT_CACHE_DIR)
 
     if args.joined_dictionary:
         assert (
@@ -159,14 +155,14 @@ def main(args):
         tgt_dict = src_dict
     else:
         if args.srcdict:
-            src_dict = task.load_dictionary(args.srcdict)
+            src_dict = task.load_dictionary(args.srcdict, tokenizer)
         else:
             assert args.trainpref, "--trainpref must be set if --srcdict is not specified"
             src_dict = build_dictionary([train_path(args.source_lang)], src=True, tokenizer=tokenizer)
 
         if target:
             if args.tgtdict:
-                tgt_dict = task.load_dictionary(args.tgtdict)
+                tgt_dict = task.load_dictionary(args.tgtdict, tokenizer)
             else:
                 assert args.trainpref, "--trainpref must be set if --tgtdict is not specified"
                 tgt_dict = build_dictionary([train_path(args.target_lang)], tgt=True, tokenizer=tokenizer)
@@ -331,14 +327,14 @@ def main(args):
 
     def make_all(lang, vocab, tokenize):  # make train, valid and text dataset
         if args.trainpref:
-            make_dataset(vocab, tokenize, f"{args.trainpref}.bert", "train.bert", lang, num_workers=args.workers)
+            make_dataset(vocab, tokenize, f"{args.trainpref}.bert", "train", lang, num_workers=args.workers)
 
         if args.validpref:
             for k, validpref in enumerate(args.validpref.split(",")):
                 outprefix = "valid{}".format(k) if k > 0 else "valid"
                 make_dataset(vocab, tokenize,
                              f"{validpref}.bert",
-                             f"{outprefix}.bert",
+                             outprefix,
                              lang, num_workers=args.workers)
 
         if args.testpref:
@@ -346,7 +342,7 @@ def main(args):
                 outprefix = "test{}".format(k) if k > 0 else "test"
                 make_dataset(vocab, tokenize,
                              f"{testpref}.bert",
-                             f"{outprefix}.bert",
+                             outprefix,
                              lang, num_workers=args.workers)
 
     make_all(args.source_lang, src_dict, tokenizer.tokenize)

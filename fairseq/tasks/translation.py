@@ -115,7 +115,7 @@ def load_langpair_dataset(
     if len(src_datasets) == 1:
         src_dataset = src_datasets[0]
         tgt_dataset = tgt_datasets[0] if len(tgt_datasets) > 0 else None
-    else:   # todo
+    else:  # todo
         sample_ratios = [1] * len(src_datasets)
         sample_ratios[0] = upsample_primary
         src_dataset = ConcatDataset(src_datasets, sample_ratios)
@@ -135,7 +135,7 @@ def load_langpair_dataset(
         src_dataset = PrependTokenDataset(src_dataset, prepend_bos_src)
 
     eos = None
-    if append_source_id:    # todo
+    if append_source_id:  # todo
         src_dataset = AppendTokenDataset(
             src_dataset, src_dict.index("[{}]".format(src))
         )
@@ -255,7 +255,7 @@ class TranslationConfig(FairseqDataclass):
     eval_bleu_remove_bpe: Optional[str] = field(
         default=None,
         metadata={"help": "remove BPE before computing BLEU",
-                  "argparse_const": "@@ ",},
+                  "argparse_const": "@@ ", },
     )
     eval_bleu_print_samples: bool = field(
         default=False,

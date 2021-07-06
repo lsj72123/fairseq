@@ -211,8 +211,6 @@ def add_preprocess_args(parser):
                        help="if true, only builds a dictionary and then exits")
     parser.add_argument("--bert-model", default='',
                         help="BERT model name")
-    parser.add_argument("--bert-model-dir", default='',
-                        help='Pretrained BERT model checkpoint directory')
     # fmt: on
     return parser
 

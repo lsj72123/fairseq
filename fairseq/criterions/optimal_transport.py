@@ -1,33 +1,22 @@
 import torch
 import math
-from dataclasses import field
-from omegaconf import II
-from dataclasses import dataclass
-from torch.nn.functional import normalize, one_hot
+import logging
+import warnings
+import json
+import torch.nn.functional as F
+
+from torch import nn
+from os.path import join
+from dataclasses import dataclass, field
 
 from fairseq import utils, metrics
-from fairseq.dataclass import FairseqDataclass
-from fairseq.criterions import FairseqCriterion, register_criterion
+from fairseq.criterions import register_criterion
+from fairseq.criterions.label_smoothed_cross_entropy import (
+    LabelSmoothedCrossEntropyCriterionConfig,
+    LabelSmoothedCrossEntropyCriterion,
+)
 
-
-def label_smoothed_nll_loss(lprobs, target, epsilon, ignore_index=None, reduce=True):
-    if target.dim() == lprobs.dim() - 1:
-        target = target.unsqueeze(-1)
-    nll_loss = -lprobs.gather(dim=-1, index=target)
-    smooth_loss = -lprobs.sum(dim=-1, keepdim=True)
-    if ignore_index is not None:
-        pad_mask = target.eq(ignore_index)
-        nll_loss.masked_fill_(pad_mask, 0.0)
-        smooth_loss.masked_fill_(pad_mask, 0.0)
-    else:
-        nll_loss = nll_loss.squeeze(-1)
-        smooth_loss = smooth_loss.squeeze(-1)
-    if reduce:
-        nll_loss = nll_loss.sum()
-        smooth_loss = smooth_loss.sum()
-    eps_i = epsilon / (lprobs.size(-1) - 1)
-    loss = (1.0 - epsilon - eps_i) * nll_loss + eps_i * smooth_loss
-    return loss, nll_loss
+logger = logging.getLogger(__name__)
 
 
 def IPOT_distance(C, beta=1.0, iteration=10, step=1):
@@ -49,11 +38,12 @@ def IPOT_distance(C, beta=1.0, iteration=10, step=1):
 
 def compute_ot_loss(input_embed, target_embed, output_embed, iteration=10,
                     copy_weight=0.0, match_weight=0.1, beta=1.0, step=1):
-    cosine_cost_copy = 1 - torch.bmm(input_embed, output_embed.permute([0, 2, 1]))
+    if input_embed is not None:
+        cosine_cost_copy = 1 - torch.bmm(input_embed, output_embed.permute([0, 2, 1]))
     cosine_cost_match = 1 - torch.bmm(target_embed, output_embed.permute([0, 2, 1]))
 
-    total_loss = torch.tensor(0., device=input_embed.device)
-    if copy_weight > 0:
+    total_loss = torch.tensor(0., device=target_embed.device)
+    if input_embed is not None and copy_weight > 0:
         copy_distance = IPOT_distance(cosine_cost_copy, beta=beta, iteration=iteration, step=step)
         total_loss += copy_distance * copy_weight
 
@@ -64,26 +54,73 @@ def compute_ot_loss(input_embed, target_embed, output_embed, iteration=10,
     return total_loss
 
 
+def reduce_model(model, old_vocab, new_vocab, path_to_save):
+    logger.info(" - parameters before reducing : {}".format(model.num_parameters()))
+    logger.info(" - tokens before reducing : {}".format(len(old_vocab)))
+
+    old_embeddings = model.get_input_embeddings()  # only need to change the word_embedding
+    old_num_tokens, old_embedding_dim = old_embeddings.weight.size()
+    assert old_num_tokens == len(old_vocab), 'len(old_vocab) != len(model.old_embeddings)'
+
+    if len(new_vocab) == 0:
+        warnings.warn("No word in target dictionary! BERT model will not be reduced!")
+        return old_embeddings
+
+    new_embeddings = nn.Embedding(len(new_vocab), old_embedding_dim).to(old_embeddings.weight.device)
+    vocab = []
+    for i, token in enumerate(new_vocab):
+        if i >= len(new_vocab):
+            break
+        idx = old_vocab.get(token, None)
+
+        if idx is None:
+            if token == new_vocab.bos_word:
+                idx = old_vocab.get("[CLS]", None)
+                vocab.append("[CLS]")
+            elif token == new_vocab.eos_word:
+                idx = old_vocab.get("[SEP]", None)
+                vocab.append("[SEP]")
+            elif token == new_vocab.pad_word:
+                idx = old_vocab.get("[PAD]", None)
+                vocab.append("[PAD]")
+            elif token == new_vocab.unk_word:
+                idx = old_vocab.get("[UNK]", None)
+                vocab.append("[UNK]")
+            elif "madeupword" in token:
+                idx = old_vocab.get("[UNK]", None)
+                vocab.append(token)
+            else:
+                raise ValueError("Unknown token in target dictionary")
+        else:
+            vocab.append(token)
+        assert idx is not None, "Unknown index in BERT dictionary"
+        new_embeddings.weight.data[i, :] = old_embeddings.weight.data[idx, :]
+
+    assert len(vocab) == len(new_vocab)
+    model.set_input_embeddings(new_embeddings)
+    model.config.vocab_size = len(new_vocab)
+    model.vocab_size = len(new_vocab)
+    model.tie_weights()
+    model.save_pretrained(path_to_save)
+
+    # save vocab
+    with open(join(path_to_save, "vocab.txt"), "w", encoding="utf-8") as f:
+        for token in vocab:
+            f.write(token + '\n')
+
+    with open(join(path_to_save, "tokenizer_config.json"), "w", encoding="utf-8") as f:
+        json.dump({"do_lower_case": False, "model_max_length": 512}, f)
+    return model
+
+
 @dataclass
-class OptimalTransportConfig(FairseqDataclass):
-    label_smoothing: float = field(
-        default=0.0,
-        metadata={"help": "epsilon for label smoothing, 0 means no label smoothing"},
-    )
-    report_accuracy: bool = field(
-        default=False,
-        metadata={"help": "report accuracy metric"},
-    )
-    ignore_prefix_size: int = field(
-        default=0,
-        metadata={"help": "Ignore first N tokens"},
-    )
-    ot_weight_copy: float = field(
+class LabelSmoothedCrossEntropyCriterionConfig_OT(LabelSmoothedCrossEntropyCriterionConfig):
+    ot_copy_weight: float = field(
         default=0.0,
         metadata={'help': "weight of Optimal Transport loss in copy term"}
     )
-    ot_weight_match: float = field(
-        default=0.1,
+    ot_match_weight: float = field(
+        default=1,
         metadata={'help': "weight of Optimal Transport loss in match term"}
     )
     ot_beta: float = field(
@@ -98,34 +135,32 @@ class OptimalTransportConfig(FairseqDataclass):
         default=1,
         metadata={'help': 'number of step for calculating OT distance in every iteration'}
     )
-    sentence_avg: bool = II("optimization.sentence_avg")
 
 
-@register_criterion('label_smoothed_cross_entropy_with_ot', dataclass=OptimalTransportConfig)
-class LabelSmoothedCrossEntropyCriterion_OT(FairseqCriterion):
+@register_criterion(
+    'label_smoothed_cross_entropy_ot',
+    dataclass=LabelSmoothedCrossEntropyCriterionConfig_OT
+)
+class LabelSmoothedCrossEntropyCriterion_OT(LabelSmoothedCrossEntropyCriterion):
     def __init__(
             self,
             task,
             sentence_avg,
             label_smoothing,
-            ot_weight_copy=0.0,
-            ot_weight_match=0.1,
+            ot_copy_weight=0.0,
+            ot_match_weight=0.1,
             ot_beta=0.5,
             ot_iteration=50,
             ot_k_step=1,
             ignore_prefix_size=0,
             report_accuracy=False,
     ):
-        super().__init__(task)
-        self.weight_copy = ot_weight_copy
-        self.weight_match = ot_weight_match
+        super().__init__(task, sentence_avg, label_smoothing, ignore_prefix_size, report_accuracy)
+        self.copy_weight = ot_copy_weight
+        self.match_weight = ot_match_weight
         self.beta = ot_beta
         self.iteration = ot_iteration
         self.k_step = ot_k_step
-        self.sentence_avg = sentence_avg
-        self.eps = label_smoothing
-        self.ignore_prefix_size = ignore_prefix_size
-        self.report_accuracy = report_accuracy
 
     def forward(self, model, sample, reduce=True):
         """Compute the loss for the given sample.
@@ -154,28 +189,26 @@ class LabelSmoothedCrossEntropyCriterion_OT(FairseqCriterion):
             logging_output["total"] = utils.item(total.data)
         return loss, sample_size, logging_output
 
-    def compute_loss(self, model, net_output, sample, reduce=True):
-        lprobs, probs, target = self.get_lprobs_and_target(model, net_output, sample)
-        label_smoothed_loss, nll_loss = label_smoothed_nll_loss(
-            lprobs,
-            target,
-            self.eps,
-            ignore_index=self.padding_idx,
-            reduce=reduce,
-        )
+    def compute_ot_loss(self, model, net_output, sample):
+        probs = model.get_normalized_probs(net_output, log_probs=False)
+        if self.ignore_prefix_size > 0:
+            if getattr(probs, "batch_first", False):
+                probs = probs[:, self.ignore_prefix_size:, :].contiguous()
+            else:
+                probs = probs[self.ignore_prefix_size:, :, :].contiguous()
+
         assert hasattr(model, 'decoder')
         if getattr(model.decoder, 'fc_out', None):
             decoder_embedding = model.decoder.fc_out.weight
         else:
             decoder_embedding = model.decoder.embed_tokens.weight
 
-        output_embed = torch.matmul(probs, decoder_embedding)   # average embedding
-        output_embed_norm = normalize(output_embed, p=2, dim=-1, eps=1e-12)  # take the average embedding
-        output_embed_norm = output_embed_norm.view([sample["nsentences"], -1, output_embed_norm.size(-1)]).contiguous()
+        output_embed = torch.einsum("aij,jk->aik", probs, decoder_embedding)
+        output_embed_norm = F.normalize(output_embed, p=2, dim=-1, eps=1e-12)  # take the average embedding
 
-        target_sentence = one_hot(sample["target"], num_classes=decoder_embedding.size(0)).float()
+        target_sentence = F.one_hot(sample["target"], num_classes=probs.size(-1)).float()
         target_embed = torch.einsum("aij,jk->aik", target_sentence, decoder_embedding)
-        target_embed_norm = normalize(target_embed, p=2, dim=-1, eps=1e-12)
+        target_embed_norm = F.normalize(target_embed, p=2, dim=-1, eps=1e-12)
 
         assert hasattr(model, 'encoder')
         src_tokens = sample["net_input"]["src_tokens"]
@@ -187,47 +220,20 @@ class LabelSmoothedCrossEntropyCriterion_OT(FairseqCriterion):
             )
         encoder_embedding = model.encoder.embed_tokens
         input_embed = encoder_embedding(src_tokens)
-        input_embed_norm = normalize(input_embed, p=2, dim=-1, eps=1e-12)
+        input_embed_norm = F.normalize(input_embed, p=2, dim=-1, eps=1e-12)
 
         ot_loss = compute_ot_loss(input_embed_norm, target_embed_norm, output_embed_norm,
-                                  iteration=self.iteration, copy_weight=self.weight_copy,
-                                  match_weight=self.weight_match, beta=self.beta, step=self.k_step)
+                                  iteration=self.iteration, copy_weight=self.copy_weight,
+                                  match_weight=self.match_weight, beta=self.beta, step=self.k_step)
 
+        return ot_loss
+
+    def compute_loss(self, model, net_output, sample, reduce=True):
+        label_smoothed_loss, nll_loss = super().compute_loss(model, net_output, sample, reduce)
+        ot_loss = self.compute_ot_loss(model, net_output, sample)
         loss = label_smoothed_loss + ot_loss
+
         return loss, label_smoothed_loss, nll_loss, ot_loss
-
-    def get_lprobs_and_target(self, model, net_output, sample):
-        lprobs = model.get_normalized_probs(net_output, log_probs=True)
-        probs = model.get_normalized_probs(net_output, log_probs=False)
-        target = model.get_targets(sample, net_output)
-        if self.ignore_prefix_size > 0:
-            if getattr(lprobs, "batch_first", False):
-                lprobs = lprobs[:, self.ignore_prefix_size:, :].contiguous()
-                probs = probs[:, self.ignore_prefix_size:, :].contiguous()
-                target = target[:, self.ignore_prefix_size:].contiguous()
-            else:
-                lprobs = lprobs[self.ignore_prefix_size:, :, :].contiguous()
-                probs = probs[self.ignore_prefix_size:, :, :].contiguous()
-                target = target[self.ignore_prefix_size:, :].contiguous()
-        return lprobs.view(-1, lprobs.size(-1)), probs.view(-1, probs.size(-1)), target.view(-1)
-
-    def compute_accuracy(self, model, net_output, sample):
-        lprobs, _, target = self.get_lprobs_and_target(model, net_output, sample)
-        mask = target.ne(self.padding_idx)
-        n_correct = torch.sum(
-            lprobs.argmax(1).masked_select(mask).eq(target.masked_select(mask))
-        )
-        total = torch.sum(mask)
-        return n_correct, total
-
-    @staticmethod
-    def logging_outputs_can_be_summed() -> bool:
-        """
-        Whether the logging outputs returned by `forward` can be summed
-        across workers prior to calling `reduce_metrics`. Setting this
-        to True will improves distributed training speed.
-        """
-        return True
 
     @classmethod
     def reduce_metrics(cls, logging_outputs) -> None:
@@ -273,29 +279,100 @@ class LabelSmoothedCrossEntropyCriterion_OT(FairseqCriterion):
             )
 
 
-@register_criterion('optimal_transport', dataclass=OptimalTransportConfig)
-class OptimalTransportCriterion(FairseqCriterion):
+@register_criterion(
+    "label_smoothed_cross_entropy_bertot",
+    dataclass=LabelSmoothedCrossEntropyCriterionConfig_OT
+)
+class LabelSmoothedCrossEntropyCriterion_BERTOT(LabelSmoothedCrossEntropyCriterion_OT):
+    def __init__(
+            self,
+            task,
+            sentence_avg,
+            label_smoothing,
+            ot_copy_weight=0.0,
+            ot_match_weight=0.1,
+            ot_beta=0.5,
+            ot_iteration=50,
+            ot_k_step=1,
+            ignore_prefix_size=0,
+            report_accuracy=False,
+    ):
+        super().__init__(task, sentence_avg, label_smoothing, ot_copy_weight, ot_match_weight,
+                         ot_beta, ot_iteration, ot_k_step, ignore_prefix_size, report_accuracy)
 
-    def __init__(self, task, sentence_avg):
-        super().__init__(task)
-        self.sentence_avg = sentence_avg
+        # start to reduce the BERT scale.
+        self.bert_tokenizer = task.bert_tokenizer
+        bert_model = task.bert_model
 
-    def forward(self, model, sample, reduce=True):
-        net_output = model(**sample["net_input"])
-        nll_loss = self.compute_nll_loss(model, net_output, sample, reduce=reduce)
-        ot_loss = self.compute_ot_loss()
+        logger.info("start to reduce the {} model.".format(task.cfg.bert_model))
 
-    def compute_ot_loss(self, model, net_output, sample, reduce=True):
+        assert hasattr(task, "tgt_dict"), "task must contain target dictionary"
+        new_vocab = task.tgt_dict
+        old_vocab = self.bert_tokenizer.vocab
+        if len(new_vocab) == len(old_vocab):
+            logger.info(" - Model is already reduced")
+            self.reduced_model = bert_model
+        else:
+            self.reduced_model = reduce_model(bert_model, old_vocab, new_vocab, task.cfg.bert_model_dir)
+
+        logger.info(" - Reduced Model Parameters: {}".format(self.reduced_model.num_parameters()))
+        logger.info(" - Reduced Tokens number: {}".format(
+            self.reduced_model.get_input_embeddings().weight.size(0)))
+
+        for p in self.reduced_model.parameters():
+            p.requires_grad = False
+
+        batch_bos = torch.zeros([1, 1, len(new_vocab)])
+        batch_bos[:, :, new_vocab.bos_index] = 1
+        self.batch_bos = batch_bos
+
+    def compute_ot_loss(self, model, net_output, sample):
         probs = model.get_normalized_probs(net_output, log_probs=False)
+        if self.ignore_prefix_size > 0:
+            if getattr(probs, "batch_first", False):
+                probs = probs[:, self.ignore_prefix_size:, :].contiguous()
+            else:
+                probs = probs[self.ignore_prefix_size:, :, :].contiguous()
 
-    def compute_nll_loss(self, model, net_output, sample, reduce=True):
-        lprobs = model.get_normalized_probs(net_output, log_probs=True)
-        lprobs = lprobs.view(-1, lprobs.size(-1))
-        target = model.get_targets(sample, net_output).view(-1)
-        loss = F.nll_loss(
-            lprobs,
-            target,
-            ignore_index=self.padding_idx,
-            reduction="sum" if reduce else "none",
-        )
-        return loss
+        self.reduced_model.to(probs.device)
+        self.reduced_model.eval()
+
+        bert_word_embedding = self.reduced_model.get_input_embeddings().weight
+
+        batch_bos = self.batch_bos.repeat([sample["nsentences"], 1, 1]).to(probs.device)
+
+        target_sentence = F.one_hot(sample["target"], num_classes=probs.size(-1)).float()
+        target_embed = torch.einsum("aij,jk->aik",
+                                    torch.cat([batch_bos, target_sentence], dim=1),
+                                    bert_word_embedding)
+        # target_contextual_embedding = F.normalize(target_embed, p=2, dim=-1, eps=1e-12)
+        target_contextual_embedding = self.reduced_model(inputs_embeds=target_embed)[0]
+        target_contextual_embedding = F.normalize(target_contextual_embedding, p=2, dim=-1, eps=1e-12)
+
+        output_embed = torch.einsum("aij,jk->aik",
+                                    torch.cat([batch_bos, probs], dim=1),
+                                    bert_word_embedding)
+        # output_contextual_embedding = F.normalize(output_embed, p=2, dim=-1, eps=1e-12)
+        output_contextual_embedding = self.reduced_model(inputs_embeds=output_embed)[0]
+        output_contextual_embedding = F.normalize(output_contextual_embedding, p=2, dim=-1, eps=1e-12)
+
+        # todo, make the input compatible with BERT embedding
+        assert hasattr(model, 'encoder')
+        src_tokens = sample["net_input"]["src_tokens"]
+        if getattr(model.encoder, "left_pad", True):
+            src_tokens = utils.convert_padding_direction(
+                src_tokens,
+                torch.zeros_like(src_tokens).fill_(self.padding_idx),
+                left_to_right=True,
+            )
+        # encoder_embedding = model.encoder.embed_tokens
+        # input_embed = encoder_embedding(src_tokens)
+        # input_embed_norm = F.normalize(input_embed, p=2, dim=-1, eps=1e-12)
+        input_embed_norm = None
+
+        ot_loss = compute_ot_loss(input_embed_norm,
+                                  target_contextual_embedding,
+                                  output_contextual_embedding,
+                                  iteration=self.iteration, copy_weight=self.copy_weight,
+                                  match_weight=self.match_weight, beta=self.beta, step=self.k_step)
+        return ot_loss
